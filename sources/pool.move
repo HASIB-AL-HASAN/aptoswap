@@ -41,9 +41,9 @@ module Aptoswap::pool {
 
     struct LSP<phantom X, phantom Y> {}
 
-    struct LSPCapabilities<phantom X, phantom Y> {
+    struct LSPCapabilities<phantom X, phantom Y> has key {
         mint: coin::MintCapability<LSP<X, Y>>,
-        free: coin::FreezeCapability<LSP<X, Y>>,
+        freeze: coin::FreezeCapability<LSP<X, Y>>,
         burn: coin::BurnCapability<LSP<X, Y>>,
     }
 
@@ -68,8 +68,11 @@ module Aptoswap::pool {
     public entry fun initialize(owner: &signer, demicals: u8) {
         initialize_impl(owner, demicals);
     }
-    public entry fun create_pool<X, Y>(owner: &signer, x_amt: u64, y_amt: u64, admin_fee: u64, lp_fee: u64) acquires AptoswapCap {
+    public entry fun create_pool<X, Y>(owner: &signer, x_amt: u64, y_amt: u64, admin_fee: u64, lp_fee: u64) acquires AptoswapCap, LSPCapabilities {
         create_pool_impl<X, Y>(owner, x_amt, y_amt, admin_fee, lp_fee);
+    }
+    public entry fun swap_x_to_y<X, Y>(user: &signer, pool_account_addr: address, x_amt: u64) {
+        swap_x_to_y_impl<X, Y>(user, pool_account_addr, x_amt);
     }
     // ============================================= Entry points =============================================
 
@@ -90,7 +93,7 @@ module Aptoswap::pool {
         move_to(owner, aptos_cap);
     }
 
-    fun create_pool_impl<X, Y>(owner: &signer, x_amt: u64, y_amt: u64, admin_fee: u64, lp_fee: u64) acquires AptoswapCap {
+    fun create_pool_impl<X, Y>(owner: &signer, x_amt: u64, y_amt: u64, admin_fee: u64, lp_fee: u64) acquires AptoswapCap, LSPCapabilities {
         let owner_addr = signer::address_of(owner);
 
         assert!(exists<AptoswapCap>(owner_addr), EPermissionDenied);
@@ -124,19 +127,38 @@ module Aptoswap::pool {
         coin::transfer<X>(owner, pool_account_addr, x_amt);
         coin::transfer<Y>(owner, pool_account_addr, y_amt);
 
-        // Initialize the LSP<X, Y> token and transfer the ownership to pool account
-        // TODO: LSPCapabilities ??? 
-        coin::initialize(
+        // Initialize the LSP<X, Y> token and transfer the ownership to pool account 
+        let (burn_cap, freeze_cap, mint_cap) = coin::initialize<LSP<X, Y>>(
             owner, 
             string::utf8(b"Aptoswap Pool Token"),
             string::utf8(b"APTSLSP"),
             0, 
             true
         );
+        let lsp_cap = LSPCapabilities<X, Y> {
+            mint: mint_cap,
+            freeze: freeze_cap,
+            burn: burn_cap
+         };
+         move_to(&pool_account_signer, lsp_cap);
 
-        // Initialize the LSP<X, Y> coin
+         // Register the lsp token for the pool account
+         managed_coin::register<LSP<X, Y>>(&pool_account_signer);
+
+        // Mint corresponding lsp token and transfer to the owner
+        let lsp_cap = borrow_global<LSPCapabilities<X, Y>>(pool_account_addr);
         let lsp_share_amt = sqrt(x_amt) * sqrt(y_amt);
-    }   
+        let lsp_coin_minted = coin::mint(lsp_share_amt, &lsp_cap.mint);
+
+        if (!coin::is_account_registered<LSP<X, Y>>(owner_addr)) {
+            managed_coin::register<LSP<X, Y>>(owner);
+        };
+        coin::deposit(owner_addr, lsp_coin_minted);
+    }
+
+    fun swap_x_to_y_impl<X, Y>(user: &signer, pool_account_addr: address, x_amt: u64) {
+        
+    }
     // ============================================= Implementations =============================================
 
     // ============================================= Helper Function =============================================
