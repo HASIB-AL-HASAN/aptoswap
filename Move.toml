@@ -9,4 +9,4 @@ Aptoswap = "_"
 AptosFramework = { local = "./submodules/aptos-core/aptos-move/framework/aptos-framework" }
 
 [dev-addresses]
-Aptoswap = "0x3ffb"
+Aptoswap = "0x11111"
