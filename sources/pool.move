@@ -179,6 +179,8 @@ module Aptoswap::pool {
         move_to(&pool_account_signer, pool);
 
         // Transfer the balance to the pool account
+        managed_coin::register<X>(&pool_account_signer);
+        managed_coin::register<Y>(&pool_account_signer);
         coin::transfer<X>(owner, pool_account_addr, x_amt);
         coin::transfer<Y>(owner, pool_account_addr, y_amt);
 
@@ -207,6 +209,7 @@ module Aptoswap::pool {
         if (!coin::is_account_registered<LSP<X, Y>>(owner_addr)) {
             managed_coin::register<LSP<X, Y>>(owner);
         };
+        
         coin::deposit(owner_addr, lsp_coin_minted);
 
         let pool = borrow_global<Pool<X, Y>>(pool_account_addr);
@@ -239,7 +242,7 @@ module Aptoswap::pool {
         let ComputeShareStruct { 
             remain: x_remain_amt,
             admin: x_admin_amt,
-            lp: _
+            lp: x_lp
         } = compute_share(pool, in_amount);
 
         // Get the output amount
@@ -250,7 +253,7 @@ module Aptoswap::pool {
         );
 
         pool.x_admin = pool.x_admin + x_admin_amt;
-        pool.x = pool.x + x_remain_amt;
+        pool.x = pool.x + x_remain_amt + x_lp;
         pool.y = pool.y - output_amount;
 
         coin::transfer<X>(user, pool_account_addr, in_amount);
@@ -550,6 +553,12 @@ module Aptoswap::pool {
         assert!(coin::balance<Y>(pool_account_addr) >= pool.y + pool.y_admin, EComputationError);
     }
 
+    #[test_only]
+    fun validate_fund_strict<X, Y>(pool_account_addr: address, pool: &Pool<X, Y>) {
+        assert!(coin::balance<X>(pool_account_addr) == pool.x + pool.x_admin, EComputationError);
+        assert!(coin::balance<Y>(pool_account_addr) == pool.y + pool.y_admin, EComputationError);
+    }
+
     fun validate_lsp<X, Y>(pool: &Pool<X, Y>) {
         let lsp_supply_checked = *option::borrow(&coin::supply<LSP<X, Y>>());
         assert!(lsp_supply_checked == (pool.lsp_supply as u128), EComputationError);
@@ -592,28 +601,122 @@ module Aptoswap::pool {
 
     // ============================================= Utilities =============================================
 
-    struct TX { }
-    struct TY { }
 
-    #[test(admin = @Aptoswap, guy = @0x11112)]
-    fun test_init_pool(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
-        account::create_account(signer::address_of(&admin));
-        account::create_account(signer::address_of(&guy));
+    // ============================================= Test Case =============================================
+    #[test(admin = @Aptoswap)]
+    fun test_create_pool(admin: signer) acquires AptoswapCap, LSPCapabilities, Pool { test_create_pool_impl(admin); }
 
-        test_init_pool_impl(admin, guy, 100, 100);
+    #[test(admin = @Aptoswap, guy = @0x10000)]
+    #[expected_failure(abort_code = 134007)] // EPermissionDenied
+    fun test_create_pool_with_non_admin(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        test_create_pool_with_non_admin_impl(admin, guy);
     }
 
-    fun test_init_pool_impl(admin: signer, guy: signer, init_x_amt: u64, init_y_amt: u64) acquires AptoswapCap, LSPCapabilities, Pool {
+    #[test(admin = @Aptoswap, guy = @0x10000)]
+    fun test_swap_x_to_y(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        test_swap_x_to_y_impl(admin, guy, false);
+    }
+
+    #[test(admin = @Aptoswap, guy = @0x10000)]
+    #[expected_failure(abort_code = 134007)] // EPermissionDenied
+    fun test_swap_x_to_y_with_non_admin(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        test_swap_x_to_y_impl(admin, guy, true);
+    }
+    // ============================================= Test Case =============================================
+
+    struct TX { }
+    struct TY { }
+    struct TZ { }
+    struct TW { }
+
+    const TEST_Y_AMT: u64 = 1000000000;
+    const TEST_X_AMT: u64 = 1000000;
+    const TEST_LSP_AMT: u64 = 31622000;
+
+    fun test_create_pool_impl(admin: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        account::create_account(signer::address_of(&admin));
+
+        let admin = &admin;
+        let admin_addr = signer::address_of(admin);
+        test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+
+        assert!(coin::balance<LSP<TX, TY>>(admin_addr) == TEST_LSP_AMT, 0);
+    }
+
+    fun test_create_pool_with_non_admin_impl(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         let admin = &admin;
         let guy = &guy;
         let admin_addr = signer::address_of(admin);
-        let _guy_addr = signer::address_of(guy);
+        let guy_addr = signer::address_of(guy);
+        account::create_account(admin_addr);
+        account::create_account(guy_addr);
+
+        managed_coin::initialize<TZ>(admin, b"TX", b"TX", 10, true);
+        managed_coin::initialize<TW>(admin, b"TY", b"TY", 10, true);
+        assert!(coin::is_coin_initialized<TZ>(), 1);
+        assert!(coin::is_coin_initialized<TW>(), 2);
+        managed_coin::register<TZ>(guy);
+        managed_coin::register<TW>(guy);
+        assert!(coin::is_account_registered<TZ>(guy_addr), 3);
+        assert!(coin::is_account_registered<TW>(guy_addr), 4);
+        managed_coin::mint<TZ>(admin, guy_addr, 10);
+        managed_coin::mint<TW>(admin, guy_addr, 10);
+        assert!(coin::balance<TZ>(guy_addr) == 10, 5);
+        assert!(coin::balance<TW>(guy_addr) == 10, 5);
+
+        let _ = create_pool_impl<TZ, TW>(guy, 10, 10, 5, 25);
+    }
+
+    fun test_swap_x_to_y_impl(admin: signer, guy: signer, check_redeem_permision: bool) acquires AptoswapCap, LSPCapabilities, Pool {
+        let admin = &admin;
+        let guy = &guy;
+        let admin_addr = signer::address_of(admin);
+        let guy_addr = signer::address_of(guy);
+        account::create_account(admin_addr);
+        account::create_account(guy_addr);
+
+        // Create pool
+        let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+        managed_coin::register<TX>(guy);
+        managed_coin::register<TY>(guy);
+        managed_coin::mint<TX>(admin, guy_addr, 5000);
+
+        swap_x_to_y_impl<TX, TY>(guy, pool_account_addr, 5000);
+
+        // Check pool balance and guy balance
+        let pool = borrow_global<Pool<TX, TY>>(pool_account_addr);
+        validate_fund_strict(pool_account_addr, pool);
+        validate_lsp(pool);
+        assert!(coin::balance<TY>(guy_addr) == 4959282, 0);
+        assert!(pool.x == 1004997, 1);
+        assert!(pool.y == 995040718, 2);
+        assert!(pool.x_admin == 3, 3);
+        assert!(pool.y_admin == 0, 4);
+
+        // Redeem the profit
+        let (check_user, check_user_addr) = if (check_redeem_permision) { (guy, guy_addr) } else { (admin,admin_addr) };
+        let old_balance_tx = coin::balance<TX>(admin_addr);
+        let old_balance_ty = coin::balance<TY>(admin_addr);
+        
+        redeem_admin_balance_impl<TX, TY>(check_user, pool_account_addr);
+        let pool = borrow_global<Pool<TX, TY>>(pool_account_addr);
+        assert!(coin::balance<TX>(check_user_addr) == old_balance_tx + 3, 0);
+        assert!(coin::balance<TY>(check_user_addr) == old_balance_ty, 0);
+        assert!(pool.x_admin == 0, 0);
+        assert!(pool.y_admin == 0, 0);
+        validate_fund_strict(pool_account_addr, pool);
+        validate_lsp(pool);
+    }
+
+    #[test_only]
+    fun test_utils_create_pool(admin: &signer, init_x_amt: u64, init_y_amt: u64): address acquires AptoswapCap, LSPCapabilities, Pool {
+        let admin_addr = signer::address_of(admin);
 
         initialize_impl(admin, 8);
 
         // Check registe token and borrow capability
         assert!(coin::is_coin_initialized<Token>(), 0);
-        let _ = borrow_global<AptoswapCap>(admin_addr);
+        assert!(exists<AptoswapCap>(admin_addr), 0);
 
         managed_coin::initialize<TX>(admin, b"TX", b"TX", 10, true);
         managed_coin::initialize<TY>(admin, b"TY", b"TY", 10, true);
@@ -639,10 +742,15 @@ module Aptoswap::pool {
         assert!(coin::balance<LSP<TX, TY>>(admin_addr) == get_lsp_supply(pool), 8);
 
         // Use == for testing
-        assert!(coin::balance<TX>(pool_account_addr) == pool.x + pool.x_admin, EComputationError);
-        assert!(coin::balance<TY>(pool_account_addr) == pool.y + pool.y_admin, EComputationError);
+        assert!(pool.x_admin == 0 && pool.y_admin == 0, 9);
+        assert!(coin::balance<TX>(pool_account_addr) == pool.x, 9);
+        assert!(coin::balance<TY>(pool_account_addr) == pool.y, 9);
+        assert!(pool.x == TEST_X_AMT, 9);
+        assert!(pool.y == TEST_Y_AMT, 10);
 
         // Validate the lsp information
         validate_lsp<TX, TY>(pool);
+
+        pool_account_addr
     }
 }
