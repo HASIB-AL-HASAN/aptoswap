@@ -28,6 +28,8 @@ module Aptoswap::pool {
     const ENotEnoughBalance: u64 = 134008;
     /// Not coin registed
     const ECoinNotRegister: u64 = 134009;
+    /// Pool freezes for operation
+    const EPoolFreeze: u64 = 134009;
 
     /// The integer scaling setting for fees calculation.
     const BPS_SCALING: u128 = 10000;
@@ -89,6 +91,8 @@ module Aptoswap::pool {
         admin_fee: u64,
         /// Liqudity fee is denominated in basis points, in bps
         lp_fee: u64,
+        /// Whether the pool is freezed for swapping
+        freeze: bool,
         /// Capability
         pool_cap: account::SignerCapability,
         /// Swap token events
@@ -104,6 +108,15 @@ module Aptoswap::pool {
     public entry fun create_pool<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64) acquires AptoswapCap, Pool {
         let _ = create_pool_impl<X, Y>(owner, admin_fee, lp_fee);
     }
+
+    public entry fun freeze_pool<X, Y>(owner: &signer, pool_account_addr: address) acquires Pool {
+        freeze_or_unfreeze_pool_impl<X, Y>(owner, pool_account_addr, true)
+    }
+
+    public entry fun unfreeze_pool<X, Y>(owner: &signer, pool_account_addr: address) acquires Pool {
+        freeze_or_unfreeze_pool_impl<X, Y>(owner, pool_account_addr, false)
+    }
+
     public entry fun swap_x_to_y<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64) acquires Pool {
         swap_x_to_y_impl<X, Y>(user, pool_account_addr, in_amount);
     }
@@ -169,6 +182,7 @@ module Aptoswap::pool {
             lsp_supply: 0,
             admin_fee: admin_fee,
             lp_fee: lp_fee,
+            freeze: false,
             pool_cap: pool_account_cap,
             swap_token_event: event::new_event_handle<SwapTokenEvent>(&pool_account_signer),
             liquidity_event: event::new_event_handle<LiquidityEvent>(&pool_account_signer),
@@ -212,6 +226,13 @@ module Aptoswap::pool {
         pool_account_addr
     }
 
+    fun freeze_or_unfreeze_pool_impl<X, Y>(owner: &signer, pool_account_addr: address, freeze: bool) acquires Pool {
+        let owner_addr = signer::address_of(owner);
+        assert!(exists<AptoswapCap>(owner_addr), EPermissionDenied);
+        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+        pool.freeze = freeze;
+    }
+
     fun swap_x_to_y_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64) acquires Pool {
 
         let user_addr = signer::address_of(user);
@@ -222,6 +243,8 @@ module Aptoswap::pool {
         assert!(in_amount <= coin::balance<X>(user_addr), ENotEnoughBalance);
         
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+        assert!(pool.freeze == false, EPoolFreeze);
+
         let pool_account_signer = &account::create_signer_with_capability(&pool.pool_cap);
         let k_before = compute_k(pool);
 
@@ -273,6 +296,8 @@ module Aptoswap::pool {
         assert!(in_amount <= coin::balance<Y>(user_addr), ENotEnoughBalance);
         
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+        assert!(pool.freeze == false, EPoolFreeze);
+
         let pool_account_signer = &account::create_signer_with_capability(&pool.pool_cap);
         let k_before = compute_k(pool);
 
@@ -326,7 +351,7 @@ module Aptoswap::pool {
         assert!(y_added <= coin::balance<Y>(user_addr), ENotEnoughBalance);
 
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
-
+        assert!(pool.freeze == false, EPoolFreeze);
 
         let (x_amt, y_amt, lsp_supply) = get_amounts(pool);
         let share_minted = if (pool.lsp_supply > 0) {
@@ -409,7 +434,11 @@ module Aptoswap::pool {
         assert!(coin::is_account_registered<LSP<X, Y>>(user_addr), ECoinNotRegister);
         assert!(lsp_amount <= coin::balance<LSP<X, Y>>(user_addr), ENotEnoughBalance);
 
+        // Note: We don't need freeze check, user can still burn lsp token and get original token when pool
+        // is freeze
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+        
+
         let pool_account_signer = &account::create_signer_with_capability(&pool.pool_cap);
 
         // We should make the value "token / lsp" larger than the previous value before removing liqudity
@@ -647,6 +676,23 @@ module Aptoswap::pool {
     fun test_swap_x_to_y(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         // test_swap_x_to_y_impl(&admin, &guy, false);
         test_swap_x_to_y_default_impl(&admin, &guy);
+    }
+
+    #[test(admin = @Aptoswap)]
+    fun test_freeze_pool(admin: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        test_freeze_pool_impl(&admin);
+    }
+
+    #[test(admin = @Aptoswap, guy = @0x10000)]
+    #[expected_failure(abort_code = 134007)] // EPermissionDenied
+    fun test_freeze_pool_with_non_admin_impl(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        test_freeze_or_unfreeze_pool_with_non_admin_impl(&admin, &guy, true);
+    }
+
+    #[test(admin = @Aptoswap, guy = @0x10000)]
+    #[expected_failure(abort_code = 134007)] // EPermissionDenied
+    fun test_unfreeze_pool_with_non_admin_impl(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        test_freeze_or_unfreeze_pool_with_non_admin_impl(&admin, &guy, false);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
@@ -1071,6 +1117,34 @@ module Aptoswap::pool {
         account::create_account(admin_addr);
         account::create_account(guy_addr);
         let _ = create_pool_impl<TZ, TW>(guy, 5, 25);
+    }
+
+    fun test_freeze_pool_impl(admin: &signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        let admin_addr = signer::address_of(admin);
+        account::create_account(admin_addr);
+        let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+
+        freeze_pool<TX, TY>(admin, pool_account_addr);
+        let pool = borrow_global<Pool<TX, TY>>(pool_account_addr);
+        assert!(pool.freeze == true, 0);
+
+        unfreeze_pool<TX, TY>(admin, pool_account_addr);
+        let pool = borrow_global<Pool<TX, TY>>(pool_account_addr);
+        assert!(pool.freeze == false, 0);
+    }
+
+    fun test_freeze_or_unfreeze_pool_with_non_admin_impl(admin: &signer, guy: &signer, freeze: bool) acquires AptoswapCap, LSPCapabilities, Pool {
+        let admin_addr = signer::address_of(admin);
+        let guy_addr = signer::address_of(guy);
+        account::create_account(admin_addr);
+        account::create_account(guy_addr);
+
+        let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+        if (freeze) {
+            freeze_pool<TX, TY>(guy, pool_account_addr);
+        } else {
+            unfreeze_pool<TX, TY>(guy, pool_account_addr);
+        };
     }
 
     struct TestSwapConfigStruct has copy, drop {
