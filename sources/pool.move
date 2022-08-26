@@ -60,9 +60,9 @@ module Aptoswap::pool {
         lsp_amount: u64
     }
 
-    struct AptoswapCap has key {
+    struct SwapCap has key {
         /// Points to the next pool id that should be used
-        pool_id_counter: u64,
+        pool_create_counter: u64,
         pool_create_event: EventHandle<PoolCreateEvent>,
     }
 
@@ -77,6 +77,8 @@ module Aptoswap::pool {
     }
 
     struct Pool<phantom X, phantom Y> has key {
+        /// The index of the pool
+        index: u64,
         /// The balance of X token in the pool
         x: u64,
         /// The balance of token in the pool
@@ -91,7 +93,7 @@ module Aptoswap::pool {
         admin_fee: u64,
         /// Liqudity fee is denominated in basis points, in bps
         lp_fee: u64,
-        /// Whether the pool is freezed for swapping
+        /// Whether the pool is freezed for swapping and adding liquidity
         freeze: bool,
         /// Capability
         pool_cap: account::SignerCapability,
@@ -105,7 +107,7 @@ module Aptoswap::pool {
     public entry fun initialize(owner: &signer, demicals: u8) {
         initialize_impl(owner, demicals);
     }
-    public entry fun create_pool<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64) acquires AptoswapCap, Pool {
+    public entry fun create_pool<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64) acquires SwapCap, Pool {
         let _ = create_pool_impl<X, Y>(owner, admin_fee, lp_fee);
     }
 
@@ -151,30 +153,31 @@ module Aptoswap::pool {
         );
         managed_coin::register<Token>(owner);
 
-        let aptos_cap = AptoswapCap { 
-            pool_id_counter: 0,
+        let aptos_cap = SwapCap { 
+            pool_create_counter: 0,
             pool_create_event: event::new_event_handle<PoolCreateEvent>(owner)
         };
         move_to(owner, aptos_cap);
     }
 
-    fun create_pool_impl<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64): address acquires AptoswapCap, Pool {
+    fun create_pool_impl<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64): address acquires SwapCap, Pool {
         let owner_addr = signer::address_of(owner);
 
-        assert!(exists<AptoswapCap>(owner_addr), EPermissionDenied);
+        assert!(exists<SwapCap>(owner_addr), EPermissionDenied);
         assert!(lp_fee >= 0, EWrongFee);
         assert!(admin_fee >= 0, EWrongFee);
         assert!(lp_fee + admin_fee < (BPS_SCALING as u64), EWrongFee);
 
-        let aptos_cap = borrow_global_mut<AptoswapCap>(owner_addr);
-        let pool_id = aptos_cap.pool_id_counter;
-        aptos_cap.pool_id_counter = aptos_cap.pool_id_counter + 1;
+        let aptos_cap = borrow_global_mut<SwapCap>(owner_addr);
+        let pool_index = aptos_cap.pool_create_counter;
+        aptos_cap.pool_create_counter = aptos_cap.pool_create_counter + 1;
 
-        let (pool_account_signer, pool_account_cap) = account::create_resource_account(owner, get_pool_seed_from_pool_id(pool_id));
+        let (pool_account_signer, pool_account_cap) = account::create_resource_account(owner, get_pool_seed_from_pool_index(pool_index));
         let pool_account_addr = signer::address_of(&pool_account_signer);
 
         // Create pool and move
         let pool = Pool<X, Y> {
+            index: pool_index,
             x: 0,
             y: 0,
             x_admin: 0,
@@ -228,7 +231,7 @@ module Aptoswap::pool {
 
     fun freeze_or_unfreeze_pool_impl<X, Y>(owner: &signer, pool_account_addr: address, freeze: bool) acquires Pool {
         let owner_addr = signer::address_of(owner);
-        assert!(exists<AptoswapCap>(owner_addr), EPermissionDenied);
+        assert!(exists<SwapCap>(owner_addr), EPermissionDenied);
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         pool.freeze = freeze;
     }
@@ -354,7 +357,7 @@ module Aptoswap::pool {
         assert!(pool.freeze == false, EPoolFreeze);
 
         let (x_amt, y_amt, lsp_supply) = get_amounts(pool);
-        let share_minted = if (pool.lsp_supply > 0) {
+        let share_minted = if (lsp_supply > 0) {
             // When it is not a intialized the deposit, we compute the amount of minted lsp by
             // not reducing the "token / lsp" value.
 
@@ -366,8 +369,8 @@ module Aptoswap::pool {
             //  ==> dlsp <= dtoken * lsdp / token
             //  ==> dslp = floor[dtoken * lsdp / token] <= dtoken * lsdp / token
             // We use the floor operation
-            let x_shared_minted: u128 = ((x_added as u128) * (pool.lsp_supply as u128)) / (x_amt as u128);
-            let y_shared_minted: u128 = ((y_added as u128) * (pool.lsp_supply as u128)) / (y_amt as u128);
+            let x_shared_minted: u128 = ((x_added as u128) * (lsp_supply as u128)) / (x_amt as u128);
+            let y_shared_minted: u128 = ((y_added as u128) * (lsp_supply as u128)) / (y_amt as u128);
             let share_minted: u128 = if (x_shared_minted < y_shared_minted) { x_shared_minted } else { y_shared_minted };
             let share_minted: u64 = (share_minted as u64);
             share_minted
@@ -501,7 +504,7 @@ module Aptoswap::pool {
 
     fun redeem_admin_balance_impl<X, Y>(owner: &signer, pool_account_addr: address) acquires Pool {
         let owner_addr = signer::address_of(owner);
-        assert!(exists<AptoswapCap>(owner_addr), EPermissionDenied);
+        assert!(exists<SwapCap>(owner_addr), EPermissionDenied);
 
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         let pool_account_signer = &account::create_signer_with_capability(&pool.pool_cap);
@@ -644,7 +647,7 @@ module Aptoswap::pool {
         (res as u64)
     }
 
-    fun get_pool_seed_from_pool_id(pool_id: u64): vector<u8> {
+    fun get_pool_seed_from_pool_index(pool_id: u64): vector<u8> {
         let seed = b"Aptoswap::Pool_";
         vector::push_back(&mut seed, (((pool_id & 0xff00000000000000u64) >> 56) as u8));
         vector::push_back(&mut seed, (((pool_id & 0x00ff000000000000u64) >> 48) as u8));
@@ -662,46 +665,46 @@ module Aptoswap::pool {
 
     // ============================================= Test Case =============================================
     #[test(admin = @Aptoswap)]
-    fun test_create_pool(admin: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_create_pool(admin: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_create_pool_impl(&admin); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134007)] // EPermissionDenied
-    fun test_create_pool_with_non_admin(admin: signer, guy: signer) acquires AptoswapCap, Pool {
+    fun test_create_pool_with_non_admin(admin: signer, guy: signer) acquires SwapCap, Pool {
         test_create_pool_with_non_admin_impl(&admin, &guy);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_swap_x_to_y(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         // test_swap_x_to_y_impl(&admin, &guy, false);
         test_swap_x_to_y_default_impl(&admin, &guy);
     }
 
     #[test(admin = @Aptoswap)]
-    fun test_freeze_pool(admin: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_freeze_pool(admin: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_freeze_pool_impl(&admin);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134007)] // EPermissionDenied
-    fun test_freeze_pool_with_non_admin_impl(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_freeze_pool_with_non_admin_impl(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_freeze_or_unfreeze_pool_with_non_admin_impl(&admin, &guy, true);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134007)] // EPermissionDenied
-    fun test_unfreeze_pool_with_non_admin_impl(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_unfreeze_pool_with_non_admin_impl(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_freeze_or_unfreeze_pool_with_non_admin_impl(&admin, &guy, false);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134007)] // EPermissionDenied
-    fun test_swap_x_to_y_check_account_no_permission(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_account_no_permission(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: true,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -714,11 +717,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_swap_x_to_y_check_balance_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_balance_not_register(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: true,
                 check_balance_dst_not_register: false,
@@ -731,11 +734,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_swap_x_to_y_check_balance_dst_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_balance_dst_not_register(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: true,
@@ -748,11 +751,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_swap_x_to_y_check_balance_empty(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_balance_empty(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -765,11 +768,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_swap_x_to_y_check_balance_not_enough(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_balance_not_enough(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -782,11 +785,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // EPoolFreeze
-    fun test_swap_x_to_y_check_pool_freeze(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_pool_freeze(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -798,12 +801,12 @@ module Aptoswap::pool {
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_swap_y_to_x(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         // test_swap_x_to_y_impl(&admin, &guy, false);
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -816,11 +819,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134007)] // EPermissionDenied
-    fun test_swap_y_to_x_check_account_no_permission(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_account_no_permission(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: true,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -833,11 +836,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_swap_y_to_x_check_balance_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_balance_not_register(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: true,
                 check_balance_dst_not_register: false,
@@ -850,11 +853,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_swap_y_to_x_check_balance_dst_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_balance_dst_not_register(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: true,
@@ -867,11 +870,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_swap_y_to_x_check_balance_empty(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_balance_empty(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -884,11 +887,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_swap_y_to_x_check_balance_not_enough(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_balance_not_enough(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -901,11 +904,11 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // EPoolFreeze
-    fun test_swap_y_to_x_check_pool_freeze(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_pool_freeze(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -918,7 +921,7 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)] 
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_add_liquidity_check_x_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_check_x_not_register(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_impl(
             &admin, &guy, TEST_X_AMT, TEST_Y_AMT, TEST_LSP_AMT,
             TestAddLiqudityConfig {
@@ -933,7 +936,7 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)] 
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_add_liquidity_check_y_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_check_y_not_register(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_impl(
             &admin, &guy, TEST_X_AMT, TEST_Y_AMT, TEST_LSP_AMT,
             TestAddLiqudityConfig {
@@ -948,7 +951,7 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)] 
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_add_liquidity_check_x_zero(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_check_x_zero(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_impl(
             &admin, &guy, TEST_X_AMT, TEST_Y_AMT, TEST_LSP_AMT,
             TestAddLiqudityConfig {
@@ -963,7 +966,7 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)] 
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_add_liquidity_check_y_zero(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_check_y_zero(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_impl(
             &admin, &guy, TEST_X_AMT, TEST_Y_AMT, TEST_LSP_AMT,
             TestAddLiqudityConfig {
@@ -978,7 +981,7 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)] 
     #[expected_failure(abort_code = 134009)] // EPoolFreeze
-    fun test_add_liquidity_check_pool_freeze(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_check_pool_freeze(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_impl(
             &admin, &guy, TEST_X_AMT, TEST_Y_AMT, TEST_LSP_AMT,
             TestAddLiqudityConfig {
@@ -992,58 +995,58 @@ module Aptoswap::pool {
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_add_liquidity_case_1(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_case_1(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_default_impl(&admin, &guy, TEST_X_AMT, TEST_Y_AMT, TEST_LSP_AMT);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_add_liquidity_case_2(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_case_2(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_default_impl(&admin, &guy, TEST_X_AMT, TEST_Y_AMT + TEST_Y_AMT / 3, TEST_LSP_AMT);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_add_liquidity_case_3(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_case_3(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_default_impl(&admin, &guy, TEST_X_AMT, 2 * TEST_Y_AMT, TEST_LSP_AMT);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_add_liquidity_case_4(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_case_4(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_default_impl(&admin, &guy, TEST_X_AMT, 1, 0);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_add_liquidity_case_5(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_case_5(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_default_impl(&admin, &guy, 1, TEST_Y_AMT, 0);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_add_liquidity_case_6(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_case_6(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_default_impl(&admin, &guy, TEST_X_AMT / 2, TEST_Y_AMT / 3, 0);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_add_liquidity_case_7(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_case_7(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_default_impl(&admin, &guy, TEST_X_AMT / 3, TEST_Y_AMT / 2, 0);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_add_liquidity_case_8(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_case_8(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_default_impl(&admin, &guy, TEST_X_AMT * 2, TEST_Y_AMT * 3, 0);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_add_liquidity_case_9(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_case_9(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_default_impl(&admin, &guy, TEST_X_AMT * 3, TEST_Y_AMT * 2, 0);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)] 
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_withdraw_case_check_lsp_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_check_lsp_not_register(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_impl(
             &admin, 
             &guy,
             0,
-            WithdrawLiqudityConfig {
+            TestWithdrawLiqudityConfig {
                 check_lsp_not_register: true,
                 check_lsp_zero: false,
                 check_lsp_amount_larger: false,
@@ -1053,12 +1056,12 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)] 
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_withdraw_case_check_lsp_zero(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_check_lsp_zero(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_impl(
             &admin, 
             &guy,
             0,
-            WithdrawLiqudityConfig {
+            TestWithdrawLiqudityConfig {
                 check_lsp_not_register: false,
                 check_lsp_zero: true,
                 check_lsp_amount_larger: false,
@@ -1068,12 +1071,12 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)] 
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_withdraw_case_check_lsp_amount_larger(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_check_lsp_amount_larger(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_impl(
             &admin, 
             &guy,
             0,
-            WithdrawLiqudityConfig {
+            TestWithdrawLiqudityConfig {
                 check_lsp_not_register: false,
                 check_lsp_zero: false,
                 check_lsp_amount_larger: true,
@@ -1082,77 +1085,77 @@ module Aptoswap::pool {
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_1(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_withdraw_case_1(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_withdraw_liquidity_default_impl(&admin, &guy, 0);
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_2(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_2(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, 1); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_3(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_3(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, 10); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_4(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_4(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, 100); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_5(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_5(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, 1000); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_6(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_6(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, 10000); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_7(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_7(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, TEST_LSP_AMT / 6); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_8(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_8(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, TEST_LSP_AMT / 3); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_9(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_9(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, TEST_LSP_AMT / 2); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_10(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_10(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, TEST_LSP_AMT * 2 / 3); 
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    fun test_withdraw_case_11(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool { 
+    fun test_withdraw_case_11(admin: signer, guy: signer) acquires SwapCap, LSPCapabilities, Pool { 
         test_withdraw_liquidity_default_impl(&admin, &guy, TEST_LSP_AMT - 1); 
     }
 
     #[test(admin = @Aptoswap)] 
-    fun test_amm_simulate_1000(admin: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_amm_simulate_1000(admin: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_amm_simulate_1000_impl(&admin);
     }
 
     #[test(admin = @Aptoswap)] 
-    fun test_amm_simulate_3000(admin: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_amm_simulate_3000(admin: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_amm_simulate_3000_impl(&admin);
     }
 
     #[test(admin = @Aptoswap)] 
-    fun test_amm_simulate_5000(admin: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_amm_simulate_5000(admin: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_amm_simulate_5000_impl(&admin);
     }
 
     #[test(admin = @Aptoswap)] 
-    fun test_amm_simulate_10000(admin: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_amm_simulate_10000(admin: signer) acquires SwapCap, LSPCapabilities, Pool {
         test_amm_simulate_10000_impl(&admin);
     }
 
@@ -1167,7 +1170,7 @@ module Aptoswap::pool {
     const TEST_X_AMT: u64 = 1000000;
     const TEST_LSP_AMT: u64 = 31622000;
 
-    fun test_create_pool_impl(admin: &signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_create_pool_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
         account::create_account(signer::address_of(admin));
         let admin_addr = signer::address_of(admin);
         test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
@@ -1175,7 +1178,7 @@ module Aptoswap::pool {
         assert!(coin::balance<LSP<TX, TY>>(admin_addr) == TEST_LSP_AMT, 0);
     }
 
-    fun test_create_pool_with_non_admin_impl(admin: &signer, guy: &signer) acquires AptoswapCap, Pool {
+    fun test_create_pool_with_non_admin_impl(admin: &signer, guy: &signer) acquires SwapCap, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
         account::create_account(admin_addr);
@@ -1183,7 +1186,7 @@ module Aptoswap::pool {
         let _ = create_pool_impl<TZ, TW>(guy, 5, 25);
     }
 
-    fun test_freeze_pool_impl(admin: &signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_freeze_pool_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         account::create_account(admin_addr);
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
@@ -1197,7 +1200,7 @@ module Aptoswap::pool {
         assert!(pool.freeze == false, 0);
     }
 
-    fun test_freeze_or_unfreeze_pool_with_non_admin_impl(admin: &signer, guy: &signer, freeze: bool) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_freeze_or_unfreeze_pool_with_non_admin_impl(admin: &signer, guy: &signer, freeze: bool) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
         account::create_account(admin_addr);
@@ -1211,7 +1214,7 @@ module Aptoswap::pool {
         };
     }
 
-    struct TestSwapConfigStruct has copy, drop {
+    struct TestSwapConfig has copy, drop {
         check_account_no_permision: bool,
         check_balance_not_register: bool,
         check_balance_dst_not_register: bool,
@@ -1220,10 +1223,10 @@ module Aptoswap::pool {
         check_pool_freeze: bool
     }
 
-    fun test_swap_x_to_y_default_impl(admin: &signer, guy: &signer): address acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_default_impl(admin: &signer, guy: &signer): address acquires SwapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             admin, guy,
-            TestSwapConfigStruct {
+            TestSwapConfig {
                 check_account_no_permision: false,
                 check_balance_not_register: false,
                 check_balance_dst_not_register: false,
@@ -1234,7 +1237,7 @@ module Aptoswap::pool {
         )
     }
 
-    fun test_swap_x_to_y_impl(admin: &signer, guy: &signer, config: TestSwapConfigStruct): address acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_impl(admin: &signer, guy: &signer, config: TestSwapConfig): address acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
         account::create_account(admin_addr);
@@ -1242,8 +1245,11 @@ module Aptoswap::pool {
 
         // Create pool
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
-        if (config.check_pool_freeze) {
-            freeze_pool<TX, TY>(admin, pool_account_addr);
+
+        // Doing a extra freeze -> unfreeze to check whether unfreeze is also okay
+        freeze_pool<TX, TY>(admin, pool_account_addr);
+        if (!config.check_pool_freeze) {
+            unfreeze_pool<TX, TY>(admin, pool_account_addr);
         };
 
         if (!config.check_balance_not_register) {
@@ -1291,7 +1297,7 @@ module Aptoswap::pool {
         pool_account_addr
     }
 
-    fun test_swap_y_to_x_impl(admin: &signer, guy: &signer, config: TestSwapConfigStruct): address acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_impl(admin: &signer, guy: &signer, config: TestSwapConfig): address acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
         account::create_account(admin_addr);
@@ -1299,8 +1305,11 @@ module Aptoswap::pool {
 
         // Create pool
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
-        if (config.check_pool_freeze) {
-            freeze_pool<TX, TY>(admin, pool_account_addr);
+        
+        // Doing a extra freeze -> unfreeze to check whether unfreeze is also okay
+        freeze_pool<TX, TY>(admin, pool_account_addr);
+        if (!config.check_pool_freeze) {
+            unfreeze_pool<TX, TY>(admin, pool_account_addr);
         };
 
         if (!config.check_balance_not_register) {
@@ -1355,7 +1364,7 @@ module Aptoswap::pool {
         check_pool_freeze: bool
     }
 
-    fun test_add_liquidity_default_impl(admin: &signer, guy: &signer, x_added: u64, y_added: u64, checked: u64) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_default_impl(admin: &signer, guy: &signer, x_added: u64, y_added: u64, checked: u64) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_impl(admin, guy, x_added, y_added, checked, TestAddLiqudityConfig {
             check_x_not_register: false,
             check_y_not_register: false,
@@ -1365,15 +1374,18 @@ module Aptoswap::pool {
         });
     }
 
-    fun test_add_liquidity_impl(admin: &signer, guy: &signer, x_added: u64, y_added: u64, checked: u64, config: TestAddLiqudityConfig) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_add_liquidity_impl(admin: &signer, guy: &signer, x_added: u64, y_added: u64, checked: u64, config: TestAddLiqudityConfig) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
         account::create_account(admin_addr);
         account::create_account(guy_addr);
 
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
-        if (config.check_pool_freeze) {
-            freeze_pool<TX, TY>(admin, pool_account_addr);
+
+        // Doing a extra freeze -> unfreeze to check whether unfreeze is also okay
+        freeze_pool<TX, TY>(admin, pool_account_addr);
+        if (!config.check_pool_freeze) {
+            unfreeze_pool<TX, TY>(admin, pool_account_addr);
         };
 
         let pool = borrow_global<Pool<TX, TY>>(pool_account_addr);
@@ -1408,21 +1420,21 @@ module Aptoswap::pool {
         assert!(coin::balance<LSP<TX, TY>>(guy_addr) == checked, 0);
     }
 
-    struct WithdrawLiqudityConfig has copy, drop {
+    struct TestWithdrawLiqudityConfig has copy, drop {
         check_lsp_not_register: bool,
         check_lsp_zero: bool,
         check_lsp_amount_larger: bool
     }
 
-    fun test_withdraw_liquidity_default_impl(admin: &signer, guy: &signer, lsp_left: u64) acquires AptoswapCap, LSPCapabilities, Pool {
-        test_withdraw_liquidity_impl(admin, guy, lsp_left, WithdrawLiqudityConfig {
+    fun test_withdraw_liquidity_default_impl(admin: &signer, guy: &signer, lsp_left: u64) acquires SwapCap, LSPCapabilities, Pool {
+        test_withdraw_liquidity_impl(admin, guy, lsp_left, TestWithdrawLiqudityConfig {
             check_lsp_not_register: false,
             check_lsp_zero: false,
             check_lsp_amount_larger: false
         })
     }
 
-    fun test_withdraw_liquidity_impl(admin: &signer, guy: &signer, lsp_left: u64, config: WithdrawLiqudityConfig) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_withdraw_liquidity_impl(admin: &signer, guy: &signer, lsp_left: u64, config: TestWithdrawLiqudityConfig) acquires SwapCap, LSPCapabilities, Pool {
         let pool_account_addr = test_swap_x_to_y_default_impl(admin, guy);
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
@@ -1468,14 +1480,14 @@ module Aptoswap::pool {
     }
 
     #[test_only]
-    fun test_utils_create_pool(admin: &signer, init_x_amt: u64, init_y_amt: u64): address acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_utils_create_pool(admin: &signer, init_x_amt: u64, init_y_amt: u64): address acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
 
         initialize_impl(admin, 8);
 
         // Check registe token and borrow capability
         assert!(coin::is_coin_initialized<Token>(), 0);
-        assert!(exists<AptoswapCap>(admin_addr), 0);
+        assert!(exists<SwapCap>(admin_addr), 0);
 
         managed_coin::initialize<TX>(admin, b"TX", b"TX", 10, true);
         managed_coin::initialize<TY>(admin, b"TY", b"TY", 10, true);
@@ -1552,7 +1564,7 @@ module Aptoswap::pool {
 
     #[test_only]
     /// Getting a series of simulation data and check whether the simulation in the pool is right
-    fun test_utils_amm_simulate(admin: &signer, s: &AmmSimulationData) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_utils_amm_simulate(admin: &signer, s: &AmmSimulationData) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         account::create_account(admin_addr);
 
@@ -1588,7 +1600,7 @@ module Aptoswap::pool {
         }
     }
 
-    fun test_amm_simulate_1000_impl(admin: &signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_amm_simulate_1000_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
         let s = AmmSimulationData {
             x_init: 100000,
             y_init: 2245300000,
@@ -2096,7 +2108,7 @@ module Aptoswap::pool {
         test_utils_amm_simulate(admin, &s);
     }
 
-    fun test_amm_simulate_3000_impl(admin: &signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_amm_simulate_3000_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
         let s = AmmSimulationData {
             x_init: 100000,
             y_init: 1481000000,
@@ -2545,7 +2557,7 @@ module Aptoswap::pool {
         test_utils_amm_simulate(admin, &s);
     }
 
-    fun test_amm_simulate_5000_impl(admin: &signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_amm_simulate_5000_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
         let s = AmmSimulationData {
             x_init: 100000,
             y_init: 3948200000,
@@ -3023,7 +3035,7 @@ module Aptoswap::pool {
         test_utils_amm_simulate(admin, &s);
     }
 
-    fun test_amm_simulate_10000_impl(admin: &signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_amm_simulate_10000_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
         let s = AmmSimulationData {
             x_init: 100000,
             y_init: 1048100000,
