@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Swapping assets.
     - Adding or removing liqudity.
 
-## [0.1.1] - 2022-08-25
+## [0.1.2] - 2022-08-25
 - Changing creating pool without deposit any coin.
 - Add freeze operation to the pool so that user could not swap or adding liqudity to the pool.
+
+## [0.1.3] - 2022-08-26
+- Adding pool index to the pool struct
