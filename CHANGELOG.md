@@ -17,3 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.3] - 2022-08-26
 - Adding pool index to the pool struct
+
+## [0.1.3] - 2022-08-27
+- Add slippage control.

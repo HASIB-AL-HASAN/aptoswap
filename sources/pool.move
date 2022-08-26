@@ -30,6 +30,8 @@ module Aptoswap::pool {
     const ECoinNotRegister: u64 = 134009;
     /// Pool freezes for operation
     const EPoolFreeze: u64 = 134009;
+    /// Slippage limit error
+    const ESlippageLimit: u64 = 134010;
 
     /// The integer scaling setting for fees calculation.
     const BPS_SCALING: u128 = 10000;
@@ -119,12 +121,12 @@ module Aptoswap::pool {
         freeze_or_unfreeze_pool_impl<X, Y>(owner, pool_account_addr, false)
     }
 
-    public entry fun swap_x_to_y<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64) acquires Pool {
-        swap_x_to_y_impl<X, Y>(user, pool_account_addr, in_amount);
+    public entry fun swap_x_to_y<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool {
+        swap_x_to_y_impl<X, Y>(user, pool_account_addr, in_amount, min_out_amount);
     }
 
-    public entry fun swap_y_to_x<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64) acquires Pool {
-        swap_y_to_x_impl<X, Y>(user, pool_account_addr, in_amount);
+    public entry fun swap_y_to_x<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool {
+        swap_y_to_x_impl<X, Y>(user, pool_account_addr, in_amount, min_out_amount);
     }
 
     public entry fun add_liquidity<X, Y>(user: &signer, pool_account_addr: address, x_added: u64, y_added: u64) acquires Pool, LSPCapabilities {
@@ -236,7 +238,7 @@ module Aptoswap::pool {
         pool.freeze = freeze;
     }
 
-    fun swap_x_to_y_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64) acquires Pool {
+    fun swap_x_to_y_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool {
 
         let user_addr = signer::address_of(user);
 
@@ -266,6 +268,7 @@ module Aptoswap::pool {
             x_reserve_amt,
             y_reserve_amt,
         );
+        assert!(output_amount >= min_out_amount, ESlippageLimit);
 
         pool.x_admin = pool.x_admin + x_admin_amt;
         pool.x = pool.x + x_remain_amt + x_lp;
@@ -290,7 +293,7 @@ module Aptoswap::pool {
         );
     }
 
-    fun swap_y_to_x_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64) acquires Pool {
+    fun swap_y_to_x_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -319,6 +322,7 @@ module Aptoswap::pool {
             y_reserve_amt,
             x_reserve_amt,
         );
+        assert!(output_amount >= min_out_amount, ESlippageLimit);
 
         pool.y_admin = pool.y_admin + y_admin_amt;
         pool.y = pool.y + y_remain_amt + y_lp;
@@ -1268,7 +1272,7 @@ module Aptoswap::pool {
             managed_coin::register<TY>(guy);
         };
 
-        swap_x_to_y_impl<TX, TY>(guy, pool_account_addr, 5000);
+        swap_x_to_y_impl<TX, TY>(guy, pool_account_addr, 5000, 0);
 
         // Check pool balance and guy balance
         let pool = borrow_global<Pool<TX, TY>>(pool_account_addr);
@@ -1328,7 +1332,7 @@ module Aptoswap::pool {
             managed_coin::register<TX>(guy);
         };
 
-        swap_y_to_x_impl<TX, TY>(guy, pool_account_addr, 5000000);
+        swap_y_to_x_impl<TX, TY>(guy, pool_account_addr, 5000000, 0);
 
         let pool = borrow_global<Pool<TX, TY>>(pool_account_addr);
         validate_fund_strict(pool_account_addr, pool);
@@ -1582,12 +1586,12 @@ module Aptoswap::pool {
             if (info.x_added > 0) 
             {
                 managed_coin::mint<TX>(admin, admin_addr, info.x_added);
-                swap_x_to_y_impl<TX, TY>(admin, pool_account_addr, info.x_added);
+                swap_x_to_y_impl<TX, TY>(admin, pool_account_addr, info.x_added, 0);
             }
             else if (info.y_added > 0) 
             {
                 managed_coin::mint<TY>(admin, admin_addr, info.y_added);
-                swap_y_to_x_impl<TX, TY>(admin, pool_account_addr, info.y_added);
+                swap_y_to_x_impl<TX, TY>(admin, pool_account_addr, info.y_added, 0);
             };
 
             // Check the data matches the simulate data
