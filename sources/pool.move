@@ -697,7 +697,7 @@ module Aptoswap::pool {
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134007)] // EPermissionDenied
-    fun test_swap_x_to_y_account_no_permission(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_account_no_permission(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
@@ -707,13 +707,14 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         );
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_swap_x_to_y_balance_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_balance_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
@@ -723,13 +724,14 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         );
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_swap_x_to_y_balance_dst_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_balance_dst_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
@@ -739,13 +741,14 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: true,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         );
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_swap_x_to_y_balance_empty(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_balance_empty(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
@@ -755,13 +758,14 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: true,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         );
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_swap_x_to_y_balance_not_enough(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_x_to_y_check_balance_not_enough(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
@@ -771,6 +775,24 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: false,
                 check_balance_not_enough: true,
+                check_pool_freeze: false
+            }
+        );
+    }
+
+    #[test(admin = @Aptoswap, guy = @0x10000)]
+    #[expected_failure(abort_code = 134009)] // EPoolFreeze
+    fun test_swap_x_to_y_check_pool_freeze(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        test_swap_x_to_y_impl(
+            &admin, 
+            &guy, 
+            TestSwapConfigStruct {
+                check_account_no_permision: false,
+                check_balance_not_register: false,
+                check_balance_dst_not_register: false,
+                check_balance_empty: false,
+                check_balance_not_enough: false,
+                check_pool_freeze: true
             }
         );
     }
@@ -787,13 +809,14 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         );
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134007)] // EPermissionDenied
-    fun test_swap_y_to_x_account_no_permission(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_account_no_permission(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
@@ -803,13 +826,14 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         );
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_swap_y_to_x_balance_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_balance_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
@@ -819,13 +843,14 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         );
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134009)] // ECoinNotRegister
-    fun test_swap_y_to_x_balance_dst_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_balance_dst_not_register(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
@@ -835,13 +860,14 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: true,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         );
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_swap_y_to_x_balance_empty(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_balance_empty(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
@@ -851,13 +877,14 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: true,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         );
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
-    fun test_swap_y_to_x_balance_not_enough(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+    fun test_swap_y_to_x_check_balance_not_enough(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
         test_swap_y_to_x_impl(
             &admin, 
             &guy, 
@@ -867,6 +894,24 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: false,
                 check_balance_not_enough: true,
+                check_pool_freeze: false
+            }
+        );
+    }
+
+    #[test(admin = @Aptoswap, guy = @0x10000)]
+    #[expected_failure(abort_code = 134009)] // EPoolFreeze
+    fun test_swap_y_to_x_check_pool_freeze(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        test_swap_y_to_x_impl(
+            &admin, 
+            &guy, 
+            TestSwapConfigStruct {
+                check_account_no_permision: false,
+                check_balance_not_register: false,
+                check_balance_dst_not_register: false,
+                check_balance_empty: false,
+                check_balance_not_enough: false,
+                check_pool_freeze: true
             }
         );
     }
@@ -881,6 +926,7 @@ module Aptoswap::pool {
                 check_y_not_register: false,
                 check_x_zero: false,
                 check_y_zero: false,
+                check_pool_freeze: false, 
             }
         );
     }
@@ -895,6 +941,7 @@ module Aptoswap::pool {
                 check_y_not_register: true,
                 check_x_zero: false,
                 check_y_zero: false,
+                check_pool_freeze: false,
             }
         );
     }
@@ -909,6 +956,7 @@ module Aptoswap::pool {
                 check_y_not_register: false,
                 check_x_zero: true,
                 check_y_zero: false,
+                check_pool_freeze: false,
             }
         );
     }
@@ -923,6 +971,22 @@ module Aptoswap::pool {
                 check_y_not_register: false,
                 check_x_zero: false,
                 check_y_zero: true,
+                check_pool_freeze: false,
+            }
+        );
+    }
+
+    #[test(admin = @Aptoswap, guy = @0x10000)] 
+    #[expected_failure(abort_code = 134009)] // EPoolFreeze
+    fun test_add_liquidity_check_pool_freeze(admin: signer, guy: signer) acquires AptoswapCap, LSPCapabilities, Pool {
+        test_add_liquidity_impl(
+            &admin, &guy, TEST_X_AMT, TEST_Y_AMT, TEST_LSP_AMT,
+            TestAddLiqudityConfig {
+                check_x_not_register: false,
+                check_y_not_register: false,
+                check_x_zero: false,
+                check_y_zero: false,
+                check_pool_freeze: true,
             }
         );
     }
@@ -1153,6 +1217,7 @@ module Aptoswap::pool {
         check_balance_dst_not_register: bool,
         check_balance_empty: bool,
         check_balance_not_enough: bool,
+        check_pool_freeze: bool
     }
 
     fun test_swap_x_to_y_default_impl(admin: &signer, guy: &signer): address acquires AptoswapCap, LSPCapabilities, Pool {
@@ -1164,6 +1229,7 @@ module Aptoswap::pool {
                 check_balance_dst_not_register: false,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
+                check_pool_freeze: false
             }
         )
     }
@@ -1176,6 +1242,9 @@ module Aptoswap::pool {
 
         // Create pool
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+        if (config.check_pool_freeze) {
+            freeze_pool<TX, TY>(admin, pool_account_addr);
+        };
 
         if (!config.check_balance_not_register) {
             managed_coin::register<TX>(guy);
@@ -1230,6 +1299,9 @@ module Aptoswap::pool {
 
         // Create pool
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+        if (config.check_pool_freeze) {
+            freeze_pool<TX, TY>(admin, pool_account_addr);
+        };
 
         if (!config.check_balance_not_register) {
             managed_coin::register<TY>(guy);
@@ -1279,7 +1351,8 @@ module Aptoswap::pool {
         check_x_not_register: bool,
         check_y_not_register: bool,
         check_x_zero: bool,
-        check_y_zero: bool
+        check_y_zero: bool,
+        check_pool_freeze: bool
     }
 
     fun test_add_liquidity_default_impl(admin: &signer, guy: &signer, x_added: u64, y_added: u64, checked: u64) acquires AptoswapCap, LSPCapabilities, Pool {
@@ -1288,6 +1361,7 @@ module Aptoswap::pool {
             check_y_not_register: false,
             check_x_zero: false,
             check_y_zero: false,
+            check_pool_freeze: false
         });
     }
 
@@ -1298,6 +1372,10 @@ module Aptoswap::pool {
         account::create_account(guy_addr);
 
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+        if (config.check_pool_freeze) {
+            freeze_pool<TX, TY>(admin, pool_account_addr);
+        };
+
         let pool = borrow_global<Pool<TX, TY>>(pool_account_addr);
         let x_pool = pool.x;
         let y_pool = pool.y;
