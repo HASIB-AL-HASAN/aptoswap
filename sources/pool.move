@@ -597,6 +597,8 @@ module Aptoswap::pool {
         // When taking fee, we use ceil operation instead of floor operation
         let x_admin = ((x * admin_fee) + (BPS_SCALING - 1)) / BPS_SCALING;
         let x_lp = ((x * lp_fee) + (BPS_SCALING - 1)) / BPS_SCALING;
+
+        // Sometimes x_admin + x_lp will larger than remain, we just throw error on computation
         let x_remain = x - x_admin - x_lp;
 
         ComputeShareStruct {
