@@ -20,3 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.3] - 2022-08-27
 - Add slippage control.
+
+## [0.1.5] - 2022-09-03
+- Upgrade the dependency aptos core to branch `@e6e2f9f7`

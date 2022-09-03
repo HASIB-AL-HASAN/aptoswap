@@ -157,7 +157,7 @@ module Aptoswap::pool {
 
         let aptos_cap = SwapCap { 
             pool_create_counter: 0,
-            pool_create_event: event::new_event_handle<PoolCreateEvent>(owner)
+            pool_create_event: account::new_event_handle<PoolCreateEvent>(owner)
         };
         move_to(owner, aptos_cap);
     }
@@ -189,8 +189,8 @@ module Aptoswap::pool {
             lp_fee: lp_fee,
             freeze: false,
             pool_cap: pool_account_cap,
-            swap_token_event: event::new_event_handle<SwapTokenEvent>(&pool_account_signer),
-            liquidity_event: event::new_event_handle<LiquidityEvent>(&pool_account_signer),
+            swap_token_event: account::new_event_handle<SwapTokenEvent>(&pool_account_signer),
+            liquidity_event: account::new_event_handle<LiquidityEvent>(&pool_account_signer),
         };
         move_to(&pool_account_signer, pool);
 
@@ -1177,7 +1177,7 @@ module Aptoswap::pool {
     const TEST_LSP_AMT: u64 = 31622000;
 
     fun test_create_pool_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
-        account::create_account(signer::address_of(admin));
+        account::create_account_for_test(signer::address_of(admin));
         let admin_addr = signer::address_of(admin);
         test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
 
@@ -1187,14 +1187,14 @@ module Aptoswap::pool {
     fun test_create_pool_with_non_admin_impl(admin: &signer, guy: &signer) acquires SwapCap, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
-        account::create_account(admin_addr);
-        account::create_account(guy_addr);
+        account::create_account_for_test(admin_addr);
+        account::create_account_for_test(guy_addr);
         let _ = create_pool_impl<TZ, TW>(guy, 5, 25);
     }
 
     fun test_freeze_pool_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
-        account::create_account(admin_addr);
+        account::create_account_for_test(admin_addr);
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
 
         freeze_pool<TX, TY>(admin, pool_account_addr);
@@ -1209,8 +1209,8 @@ module Aptoswap::pool {
     fun test_freeze_or_unfreeze_pool_with_non_admin_impl(admin: &signer, guy: &signer, freeze: bool) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
-        account::create_account(admin_addr);
-        account::create_account(guy_addr);
+        account::create_account_for_test(admin_addr);
+        account::create_account_for_test(guy_addr);
 
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
         if (freeze) {
@@ -1246,8 +1246,8 @@ module Aptoswap::pool {
     fun test_swap_x_to_y_impl(admin: &signer, guy: &signer, config: TestSwapConfig): address acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
-        account::create_account(admin_addr);
-        account::create_account(guy_addr);
+        account::create_account_for_test(admin_addr);
+        account::create_account_for_test(guy_addr);
 
         // Create pool
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
@@ -1306,8 +1306,8 @@ module Aptoswap::pool {
     fun test_swap_y_to_x_impl(admin: &signer, guy: &signer, config: TestSwapConfig): address acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
-        account::create_account(admin_addr);
-        account::create_account(guy_addr);
+        account::create_account_for_test(admin_addr);
+        account::create_account_for_test(guy_addr);
 
         // Create pool
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
@@ -1383,8 +1383,8 @@ module Aptoswap::pool {
     fun test_add_liquidity_impl(admin: &signer, guy: &signer, x_added: u64, y_added: u64, checked: u64, config: TestAddLiqudityConfig) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
-        account::create_account(admin_addr);
-        account::create_account(guy_addr);
+        account::create_account_for_test(admin_addr);
+        account::create_account_for_test(guy_addr);
 
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
 
@@ -1572,7 +1572,7 @@ module Aptoswap::pool {
     /// Getting a series of simulation data and check whether the simulation in the pool is right
     fun test_utils_amm_simulate(admin: &signer, s: &AmmSimulationData) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
-        account::create_account(admin_addr);
+        account::create_account_for_test(admin_addr);
 
         let pool_account_addr = test_utils_create_pool(admin, s.x_init, s.y_init);
 
