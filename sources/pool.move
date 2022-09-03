@@ -4,6 +4,7 @@ module Aptoswap::pool {
     use std::vector;
     use std::option;
     use aptos_std::event::{ Self, EventHandle };
+    use aptos_std::type_info;
     use aptos_framework::managed_coin;
     use aptos_framework::coin;
     use aptos_framework::account;
@@ -66,9 +67,19 @@ module Aptoswap::pool {
         /// Points to the next pool id that should be used
         pool_create_counter: u64,
         pool_create_event: EventHandle<PoolCreateEvent>,
+        /// The capability to get the account the could be used to generate a account that could used 
+        /// for minting test token        
+        test_token_owner_cap: account::SignerCapability,
     }
 
     struct Token { }
+    struct TestToken { }
+
+    struct TestTokenCapabilities has key {
+        mint: coin::MintCapability<TestToken>,
+        freeze: coin::FreezeCapability<TestToken>,
+        burn: coin::BurnCapability<TestToken>,
+    }
 
     struct LSP<phantom X, phantom Y> {}
 
@@ -109,6 +120,15 @@ module Aptoswap::pool {
     public entry fun initialize(owner: &signer, demicals: u8) {
         initialize_impl(owner, demicals);
     }
+
+    public entry fun mint_token(owner: &signer, amount: u64, recipient: address) {
+        mint_token_impl(owner, amount, recipient);
+    }
+
+    public entry fun mint_test_token(owner: &signer, amount: u64, recipient: address) acquires SwapCap, TestTokenCapabilities {
+        mint_test_token_impl(owner, amount, recipient);
+    }
+
     public entry fun create_pool<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64) acquires SwapCap, Pool {
         let _ = create_pool_impl<X, Y>(owner, admin_fee, lp_fee);
     }
@@ -155,11 +175,62 @@ module Aptoswap::pool {
         );
         managed_coin::register<Token>(owner);
 
+        // Register the test token
+        let (test_token_owner, test_token_owner_cap) = account::create_resource_account(
+            owner, 
+            get_seed_from_hint_and_index(b"Aptoswap::TestToken", 0)
+        );
+        let test_token_owner = &test_token_owner;
+        let (test_burn_cap, test_freeze_cap, test_mint_cap) = coin::initialize<TestToken>(
+            owner,
+            string::utf8(b"Aptoswap Test"),
+            string::utf8(b"tAPTS"),
+            demicals,
+            true
+        );
+        managed_coin::register<TestToken>(test_token_owner);
+        move_to(test_token_owner, TestTokenCapabilities{
+           mint: test_mint_cap,
+           burn: test_burn_cap,
+           freeze: test_freeze_cap,
+        });
+
         let aptos_cap = SwapCap { 
             pool_create_counter: 0,
-            pool_create_event: account::new_event_handle<PoolCreateEvent>(owner)
+            pool_create_event: account::new_event_handle<PoolCreateEvent>(owner),
+            test_token_owner_cap: test_token_owner_cap
         };
         move_to(owner, aptos_cap);
+    }
+
+    fun mint_test_token_impl(owner: &signer, amount: u64, recipient: address) acquires SwapCap, TestTokenCapabilities {
+        assert!(amount > 0, EInvalidParameter);
+
+        let owner_addr = signer::address_of(owner);
+
+        let package_addr = type_info::account_address(&type_info::type_of<TestToken>());
+        let aptos_cap = borrow_global_mut<SwapCap>(package_addr);
+        let test_token_owner = &account::create_signer_with_capability(&aptos_cap.test_token_owner_cap);
+        let test_token_caps = borrow_global_mut<TestTokenCapabilities>(signer::address_of(test_token_owner));
+
+        let mint_coin = coin::mint(amount, &test_token_caps.mint);
+
+        if (!coin::is_account_registered<TestToken>(owner_addr) && (owner_addr == recipient)) {
+            managed_coin::register<TestToken>(owner);
+        };
+        coin::deposit(recipient, mint_coin);
+    }
+
+    fun mint_token_impl(owner: &signer, amount: u64, recipient: address) {
+        assert!(amount > 0, EInvalidParameter);
+        let owner_addr = signer::address_of(owner);
+        assert!(exists<SwapCap>(owner_addr), EPermissionDenied);
+
+        // if (!coin::is_account_registered<Token>(owner_addr) && (owner_addr == recipient)) {
+        //     managed_coin::register<Token>(owner);
+        // };
+
+        managed_coin::mint<Token>(owner, recipient, amount);
     }
 
     fun create_pool_impl<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64): address acquires SwapCap, Pool {
@@ -653,17 +724,20 @@ module Aptoswap::pool {
         (res as u64)
     }
 
+    fun get_seed_from_hint_and_index(hint: vector<u8>, index: u64): vector<u8> {
+        vector::push_back(&mut hint, (((index & 0xff00000000000000u64) >> 56) as u8));
+        vector::push_back(&mut hint, (((index & 0x00ff000000000000u64) >> 48) as u8));
+        vector::push_back(&mut hint, (((index & 0x0000ff0000000000u64) >> 40) as u8));
+        vector::push_back(&mut hint, (((index & 0x000000ff00000000u64) >> 32) as u8));
+        vector::push_back(&mut hint, (((index & 0x00000000ff000000u64) >> 24) as u8));
+        vector::push_back(&mut hint, (((index & 0x0000000000ff0000u64) >> 16) as u8));
+        vector::push_back(&mut hint, (((index & 0x000000000000ff00u64) >> 8) as u8));
+        vector::push_back(&mut hint, (((index & 0x00000000000000ffu64)) as u8));
+        hint
+    }
+
     fun get_pool_seed_from_pool_index(pool_id: u64): vector<u8> {
-        let seed = b"Aptoswap::Pool_";
-        vector::push_back(&mut seed, (((pool_id & 0xff00000000000000u64) >> 56) as u8));
-        vector::push_back(&mut seed, (((pool_id & 0x00ff000000000000u64) >> 48) as u8));
-        vector::push_back(&mut seed, (((pool_id & 0x0000ff0000000000u64) >> 40) as u8));
-        vector::push_back(&mut seed, (((pool_id & 0x000000ff00000000u64) >> 32) as u8));
-        vector::push_back(&mut seed, (((pool_id & 0x00000000ff000000u64) >> 24) as u8));
-        vector::push_back(&mut seed, (((pool_id & 0x0000000000ff0000u64) >> 16) as u8));
-        vector::push_back(&mut seed, (((pool_id & 0x000000000000ff00u64) >> 8) as u8));
-        vector::push_back(&mut seed, (((pool_id & 0x00000000000000ffu64)) as u8));
-        seed
+        get_seed_from_hint_and_index(b"Aptoswap::Pool_", pool_id)
     }
 
     // ============================================= Utilities =============================================
@@ -1176,7 +1250,7 @@ module Aptoswap::pool {
     const TEST_X_AMT: u64 = 1000000;
     const TEST_LSP_AMT: u64 = 31622000;
 
-    #[test]
+    #[test_only]
     fun test_create_pool_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
         account::create_account_for_test(signer::address_of(admin));
         let admin_addr = signer::address_of(admin);
@@ -1185,7 +1259,7 @@ module Aptoswap::pool {
         assert!(coin::balance<LSP<TX, TY>>(admin_addr) == TEST_LSP_AMT, 0);
     }
 
-    #[test]
+    #[test_only]
     fun test_create_pool_with_non_admin_impl(admin: &signer, guy: &signer) acquires SwapCap, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
@@ -1194,7 +1268,7 @@ module Aptoswap::pool {
         let _ = create_pool_impl<TZ, TW>(guy, 5, 25);
     }
 
-    #[test]
+    #[test_only]
     fun test_freeze_pool_impl(admin: &signer) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
@@ -1209,7 +1283,7 @@ module Aptoswap::pool {
         assert!(pool.freeze == false, 0);
     }
 
-    #[test]
+    #[test_only]
     fun test_freeze_or_unfreeze_pool_with_non_admin_impl(admin: &signer, guy: &signer, freeze: bool) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
@@ -1233,7 +1307,7 @@ module Aptoswap::pool {
         check_pool_freeze: bool
     }
 
-    #[test]
+    #[test_only]
     fun test_swap_x_to_y_default_impl(admin: &signer, guy: &signer): address acquires SwapCap, LSPCapabilities, Pool {
         test_swap_x_to_y_impl(
             admin, guy,
@@ -1248,7 +1322,7 @@ module Aptoswap::pool {
         )
     }
 
-    #[test]
+    #[test_only]
     fun test_swap_x_to_y_impl(admin: &signer, guy: &signer, config: TestSwapConfig): address acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
@@ -1309,7 +1383,7 @@ module Aptoswap::pool {
         pool_account_addr
     }
 
-    #[test]
+    #[test_only]
     fun test_swap_y_to_x_impl(admin: &signer, guy: &signer, config: TestSwapConfig): address acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
@@ -1377,7 +1451,7 @@ module Aptoswap::pool {
         check_pool_freeze: bool
     }
 
-    #[test]
+    #[test_only]
     fun test_add_liquidity_default_impl(admin: &signer, guy: &signer, x_added: u64, y_added: u64, checked: u64) acquires SwapCap, LSPCapabilities, Pool {
         test_add_liquidity_impl(admin, guy, x_added, y_added, checked, TestAddLiqudityConfig {
             check_x_not_register: false,
@@ -1388,7 +1462,7 @@ module Aptoswap::pool {
         });
     }
 
-    #[test]
+    #[test_only]
     fun test_add_liquidity_impl(admin: &signer, guy: &signer, x_added: u64, y_added: u64, checked: u64, config: TestAddLiqudityConfig) acquires SwapCap, LSPCapabilities, Pool {
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
@@ -1441,7 +1515,7 @@ module Aptoswap::pool {
         check_lsp_amount_larger: bool
     }
 
-    #[test]
+    #[test_only]
     fun test_withdraw_liquidity_default_impl(admin: &signer, guy: &signer, lsp_left: u64) acquires SwapCap, LSPCapabilities, Pool {
         test_withdraw_liquidity_impl(admin, guy, lsp_left, TestWithdrawLiqudityConfig {
             check_lsp_not_register: false,
@@ -1450,7 +1524,7 @@ module Aptoswap::pool {
         })
     }
 
-    #[test]
+    #[test_only]
     fun test_withdraw_liquidity_impl(admin: &signer, guy: &signer, lsp_left: u64, config: TestWithdrawLiqudityConfig) acquires SwapCap, LSPCapabilities, Pool {
         let pool_account_addr = test_swap_x_to_y_default_impl(admin, guy);
         let admin_addr = signer::address_of(admin);
