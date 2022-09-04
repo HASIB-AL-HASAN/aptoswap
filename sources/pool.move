@@ -14,9 +14,9 @@ module Aptoswap::pool {
     /// For when pool fee is set incorrectly.  Allowed values are: [0-10000)
     const EWrongFee: u64 = 134001;
     /// For when someone tries to swap in an empty pool.
-    const EReservesEmpty: u64 = 1340;
+    const EReservesEmpty: u64 = 134002;
     /// For when initial LSP amount is zero.02
-    const EShareEmpty: u64 = 13400;
+    const EShareEmpty: u64 = 134003;
     /// For when someone attemps to add more liquidity than u128 Math allows.3
     const EPoolFull: u64 = 134004;
     /// For when the internal operation overflow.
@@ -33,6 +33,8 @@ module Aptoswap::pool {
     const EPoolFreeze: u64 = 134009;
     /// Slippage limit error
     const ESlippageLimit: u64 = 134010;
+    /// Pool not found
+    const EPoolNotFound: u64 = 134011;
 
     /// The integer scaling setting for fees calculation.
     const BPS_SCALING: u128 = 10000;
@@ -422,7 +424,7 @@ module Aptoswap::pool {
         let user_addr = signer::address_of(user);
 
         assert!(x_added > 0 && y_added > 0, EInvalidParameter);
-        assert!(exists<Pool<X, Y>>(pool_account_addr), EInvalidParameter);
+        assert!(exists<Pool<X, Y>>(pool_account_addr), EPoolNotFound);
         assert!(coin::is_account_registered<X>(user_addr), ECoinNotRegister);
         assert!(coin::is_account_registered<Y>(user_addr), ECoinNotRegister);
         assert!(x_added <= coin::balance<X>(user_addr), ENotEnoughBalance);

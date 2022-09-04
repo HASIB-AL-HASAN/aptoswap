@@ -4,6 +4,8 @@
 
 ### Publish Compile Package
 
+> For local net development, ensuring that the node is already started before running the scirpt.
+
 - For local publish, run `APTOSWAP_PUBLISH_NETWORK="local" ./script/publish.sh"`
 - For devnet publish, run `APTOSWAP_PUBLISH_NETWORK="devnet" ./script/publish.sh"`
 
