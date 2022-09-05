@@ -37,7 +37,7 @@ cd ..
 
 if [[ ${FAUCET_URL} != "" ]] ; then
     echo "[1-additional] Funding ${APTOSWAP_PACKAGE_ADDR}"
-    aptos account fund-with-faucet --account ${APTOSWAP_PACKAGE_ADDR} --amount 1000000 --faucet-url ${FAUCET_URL}
+    aptos account fund-with-faucet --account ${APTOSWAP_PACKAGE_ADDR} --amount 1000000 --faucet-url ${FAUCET_URL} --url ${FULLNODE_URL}
 fi
 
 echo "[2] Remove previous build"
