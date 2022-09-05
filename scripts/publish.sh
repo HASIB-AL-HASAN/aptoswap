@@ -11,6 +11,15 @@ DEVNET_FAUCET_URL="https://faucet.devnet.aptoslabs.com/"
 FULLNODE_URL="${LOCALTEST_FULLNODE_URL}"
 FAUCET_URL="${LOCALTEST_FAUCET_URL}"
 
+REST_PREFIX="";
+if [ -x "$(command -v proxychains)" ]; then
+    REST_PREFIX="proxychains -q"
+    echo "Using proxychains for proxy"
+elif [ -x "$(command -v proxychains4)" ]; then
+    REST_PREFIX="proxychains4 -q"
+    echo "Using proxychains4 for proxy"
+fi
+
 if [[ ${APTOSWAP_PUBLISH_NETWORK} == "devnet" ]]; then
     FULLNODE_URL="${DEVNET_FULLNODE_URL}"
     FAUCET_URL="${DEVNET_FAUCET_URL}"
@@ -37,7 +46,7 @@ cd ..
 
 if [[ ${FAUCET_URL} != "" ]] ; then
     echo "[1-additional] Funding ${APTOSWAP_PACKAGE_ADDR}"
-    aptos account fund-with-faucet --account ${APTOSWAP_PACKAGE_ADDR} --amount 1000000 --faucet-url ${FAUCET_URL} --url ${FULLNODE_URL}
+    ${REST_PREFIX} aptos account fund-with-faucet --account ${APTOSWAP_PACKAGE_ADDR} --amount 1000000 --faucet-url ${FAUCET_URL} --url ${FULLNODE_URL}
 fi
 
 echo "[2] Remove previous build"
@@ -47,8 +56,8 @@ if [ -f "./build" ]; then
 fi
 
 echo "[3] Publish..."
-aptos move publish --named-addresses Aptoswap=default --url=${FULLNODE_URL} --max-gas 200000
+${REST_PREFIX} aptos move publish --named-addresses Aptoswap=default --url=${FULLNODE_URL} --max-gas 200000
 echo "[4] Initilaize..."
-aptos move run --function-id default::pool::initialize --args u8:6 --url=${FULLNODE_URL}
+${REST_PREFIX} aptos move run --function-id default::pool::initialize --args u8:6 --url=${FULLNODE_URL}
 echo "[5] Create pool..."
-aptos move run --function-id default::pool::create_pool --type-args 0x1::aptos_coin::AptosCoin ${APTOSWAP_PACKAGE_ADDR}::pool::TestToken --args u64:5 u64:25 --url ${FULLNODE_URL}
+${REST_PREFIX} aptos move run --function-id default::pool::create_pool --type-args 0x1::aptos_coin::AptosCoin ${APTOSWAP_PACKAGE_ADDR}::pool::TestToken --args u64:5 u64:25 --url ${FULLNODE_URL}
