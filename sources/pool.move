@@ -206,7 +206,7 @@ module Aptoswap::pool {
     }
 
     fun mint_test_token_impl(owner: &signer, amount: u64, recipient: address) acquires SwapCap, TestTokenCapabilities {
-        assert!(amount > 0, EInvalidParameter);
+        assert!(amount > 0 && amount <= 1500000000, EInvalidParameter);
 
         let owner_addr = signer::address_of(owner);
 
