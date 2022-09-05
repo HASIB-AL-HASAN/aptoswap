@@ -284,7 +284,10 @@ const getAccount = () => {
         "utf-8"
     )) as any;
     const accountPrivateKey = hexToBytes(accountConfig.profiles.default.private_key);
-    const accountAddress = accountConfig.profiles.default.account;
+    let accountAddress = accountConfig.profiles.default.account;
+    if (!accountAddress.startsWith("0x")) {
+        accountAddress = "0x" + accountAddress;
+    }
     
     fs.writeFileSync(
         path.join(process.cwd(), "..", "package_info.json"),
