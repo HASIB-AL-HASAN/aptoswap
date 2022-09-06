@@ -60,4 +60,8 @@ ${REST_PREFIX} aptos move publish --named-addresses Aptoswap=default --url=${FUL
 echo "[4] Initilaize..."
 ${REST_PREFIX} aptos move run --function-id default::pool::initialize --args u8:6 --url=${FULLNODE_URL}
 echo "[5] Create pool..."
-${REST_PREFIX} aptos move run --function-id default::pool::create_pool --type-args 0x1::aptos_coin::AptosCoin ${APTOSWAP_PACKAGE_ADDR}::pool::TestToken --args u64:5 u64:25 --url ${FULLNODE_URL}
+${REST_PREFIX} aptos move run --function-id default::pool::create_pool --type-args ${APTOSWAP_PACKAGE_ADDR}::pool::TestToken 0x1::aptos_coin::AptosCoin --args u64:5 u64:25 --url ${FULLNODE_URL}
+echo "[6] Create APTS/APT..."
+${REST_PREFIX} aptos move run --function-id default::pool::create_pool --type-args ${APTOSWAP_PACKAGE_ADDR}::pool::Token 0x1::aptos_coin::AptosCoin --args u64:5 u64:25 --url ${FULLNODE_URL}
+echo "[7] Create Minting APTS..."
+${REST_PREFIX} aptos move run --function-id default::pool::mint_token --args u64:10000000000 address:${APTOSWAP_PACKAGE_ADDR} --url ${FULLNODE_URL}
