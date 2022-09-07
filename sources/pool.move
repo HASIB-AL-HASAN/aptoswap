@@ -206,7 +206,7 @@ module Aptoswap::pool {
     }
 
     fun mint_test_token_impl(owner: &signer, amount: u64, recipient: address) acquires SwapCap, TestTokenCapabilities {
-        assert!(amount > 0 && amount <= 1500000000, EInvalidParameter);
+        assert!(amount > 0, EInvalidParameter);
 
         let owner_addr = signer::address_of(owner);
 
@@ -316,8 +316,14 @@ module Aptoswap::pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
-        assert!(coin::is_account_registered<X>(user_addr), ECoinNotRegister);
-        assert!(coin::is_account_registered<Y>(user_addr), ECoinNotRegister);
+        if (!coin::is_account_registered<X>(user_addr)) {
+            managed_coin::register<X>(user);
+        };
+        if (!coin::is_account_registered<Y>(user_addr)) {
+            managed_coin::register<Y>(user);
+        };
+        // assert!(coin::is_account_registered<X>(user_addr), ECoinNotRegister);
+        // assert!(coin::is_account_registered<Y>(user_addr), ECoinNotRegister);
         assert!(in_amount <= coin::balance<X>(user_addr), ENotEnoughBalance);
         
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
@@ -370,8 +376,14 @@ module Aptoswap::pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
-        assert!(coin::is_account_registered<X>(user_addr), ECoinNotRegister);
-        assert!(coin::is_account_registered<Y>(user_addr), ECoinNotRegister);
+        if (!coin::is_account_registered<X>(user_addr)) {
+            managed_coin::register<X>(user);
+        };
+        if (!coin::is_account_registered<Y>(user_addr)) {
+            managed_coin::register<Y>(user);
+        };
+        // assert!(coin::is_account_registered<X>(user_addr), ECoinNotRegister);
+        // assert!(coin::is_account_registered<Y>(user_addr), ECoinNotRegister);
         assert!(in_amount <= coin::balance<Y>(user_addr), ENotEnoughBalance);
         
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
