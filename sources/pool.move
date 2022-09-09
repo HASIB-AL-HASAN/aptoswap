@@ -30,11 +30,11 @@ module Aptoswap::pool {
     /// Not coin registed
     const ECoinNotRegister: u64 = 134009;
     /// Pool freezes for operation
-    const EPoolFreeze: u64 = 134009;
+    const EPoolFreeze: u64 = 134010;
     /// Slippage limit error
-    const ESlippageLimit: u64 = 134010;
+    const ESlippageLimit: u64 = 134011;
     /// Pool not found
-    const EPoolNotFound: u64 = 134011;
+    const EPoolNotFound: u64 = 134012;
 
     /// The integer scaling setting for fees calculation.
     const BPS_SCALING: u128 = 10000;
