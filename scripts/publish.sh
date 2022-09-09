@@ -8,16 +8,16 @@ LOCALTEST_FAUCET_URL="http://localhost:8081"
 DEVNET_FULLNODE_URL="https://fullnode.devnet.aptoslabs.com/v1"
 DEVNET_FAUCET_URL="https://faucet.devnet.aptoslabs.com/"
 
-FULLNODE_URL="${LOCALTEST_FULLNODE_URL}"
-FAUCET_URL="${LOCALTEST_FAUCET_URL}"
+FULLNODE_URL="${DEVNET_FULLNODE_URL}"
+FAUCET_URL="${DEVNET_FAUCET_URL}"
 
 REST_PREFIX="";
-if [ -x "$(command -v proxychains)" ]; then
-    REST_PREFIX="proxychains -q"
-    echo "Using proxychains for proxy"
-elif [ -x "$(command -v proxychains4)" ]; then
+if [ -x "$(command -v proxychains4)" ]; then
     REST_PREFIX="proxychains4 -q"
     echo "Using proxychains4 for proxy"
+elif [ -x "$(command -v proxychains)" ]; then
+    REST_PREFIX="proxychains -q"
+    echo "Using proxychains for proxy"
 fi
 
 if [[ ${APTOSWAP_PUBLISH_NETWORK} == "devnet" ]]; then
