@@ -13,8 +13,8 @@ DEVNET_FAUCET_URL="https://faucet.devnet.aptoslabs.com/"
 TESTNET_FULLNODE_URL="https://ait3.aptosdev.com/v1"
 TESTNET_FAUCET_URL=""
 
-FULLNODE_URL="${DEVNET_FULLNODE_URL}"
-FAUCET_URL="${DEVNET_FAUCET_URL}"
+FULLNODE_URL="${LOCALTEST_FULLNODE_URL}"
+FAUCET_URL="${LOCALTEST_FAUCET_URL}"
 
 if [[ ${APTOSWAP_PUBLISH_NETWORK} == "devnet" ]]; then
     FULLNODE_URL="${DEVNET_FULLNODE_URL}"
@@ -45,7 +45,7 @@ cd ..
 
 if [[ ${FAUCET_URL} != "" ]] ; then
     echo "[1-additional] Funding ${APTOSWAP_PACKAGE_ADDR}"
-    ${REST_PREFIX} aptos account fund-with-faucet --account ${APTOSWAP_PACKAGE_ADDR} --amount 1000000 --faucet-url ${FAUCET_URL} --url ${FULLNODE_URL}
+    aptos account fund-with-faucet --account ${APTOSWAP_PACKAGE_ADDR} --amount 1000000 --faucet-url ${FAUCET_URL} --url ${FULLNODE_URL}
 fi
 
 echo "[2] Remove previous build"
@@ -55,9 +55,9 @@ if [ -f "./build" ]; then
 fi
 
 echo "[3] Publish..."
-${REST_PREFIX} aptos move publish --named-addresses Aptoswap=default --url=${FULLNODE_URL} --max-gas 200000
+aptos move publish --named-addresses Aptoswap=default --url=${FULLNODE_URL} --max-gas 200000
 echo "[4] Initilaize..."
-${REST_PREFIX} aptos move run --function-id default::pool::initialize --args u8:6 --url=${FULLNODE_URL}
+aptos move run --function-id default::pool::initialize --args u8:6 --url=${FULLNODE_URL}
 echo "[5] Create pools..."
 
 echo "    Create pool[${APTOSWAP_PACKAGE_ADDR}::pool::TestToken / 0x1::aptos_coin::AptosCoin]"
