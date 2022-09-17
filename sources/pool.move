@@ -76,9 +76,7 @@ module Aptoswap::pool {
         pool_create_event: EventHandle<PoolCreateEvent>,
         /// The capability to get the account the could be used to generate a account that could used 
         /// for minting test token
-        test_token_owner_cap: account::SignerCapability,
-        /// The account address which holds all the pools
-        pool_account_addr: address
+        test_token_owner_cap: account::SignerCapability
     }
 
     struct Token { }
@@ -98,22 +96,13 @@ module Aptoswap::pool {
         burn: coin::BurnCapability<LSP<X, Y>>,
     }
 
-    struct PoolAccount has key {
-        /// The capability to get the shared pool account who owns all the pools that manage by the SwapCap
-        cap: account::SignerCapability
-    }
-
     struct Pool<phantom X, phantom Y> has key {
         /// The index of the pool
         index: u64,
         /// The balance of X token in the pool
-        x: u64,
+        x: coin::Coin<X>,
         /// The balance of token in the pool
-        y: u64,
-        /// The balance of X that admin collects
-        x_admin: u64,
-        /// The balance of token that admin collects
-        y_admin: u64,
+        y: coin::Coin<Y>,
         /// The current lsp supply value as u64
         lsp_supply: u64,
         /// Admin fee is denominated in basis points, in bps
@@ -141,46 +130,42 @@ module Aptoswap::pool {
         mint_test_token_impl(owner, amount, recipient);
     }
 
-    public entry fun create_pool<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64) acquires SwapCap, Pool, PoolAccount {
+    public entry fun create_pool<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64) acquires SwapCap, Pool {
         let _ = create_pool_impl<X, Y>(owner, admin_fee, lp_fee);
     }
 
-    public entry fun freeze_pool<X, Y>(owner: &signer, pool_account_addr: address) acquires Pool {
-        freeze_or_unfreeze_pool_impl<X, Y>(owner, pool_account_addr, true)
+    public entry fun freeze_pool<X, Y>(owner: &signer) acquires Pool {
+        freeze_or_unfreeze_pool_impl<X, Y>(owner, true)
     }
 
-    public entry fun unfreeze_pool<X, Y>(owner: &signer, pool_account_addr: address) acquires Pool {
-        freeze_or_unfreeze_pool_impl<X, Y>(owner, pool_account_addr, false)
+    public entry fun unfreeze_pool<X, Y>(owner: &signer) acquires Pool {
+        freeze_or_unfreeze_pool_impl<X, Y>(owner, false)
     }
 
-    public entry fun swap_x_to_y<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool, PoolAccount {
-        swap_x_to_y_impl<X, Y>(user, pool_account_addr, in_amount, min_out_amount);
+    public entry fun swap_x_to_y<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
+        swap_x_to_y_impl<X, Y>(user, in_amount, min_out_amount);
     }
 
-    public entry fun swap_y_to_x<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool, PoolAccount {
-        swap_y_to_x_impl<X, Y>(user, pool_account_addr, in_amount, min_out_amount);
+    public entry fun swap_y_to_x<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
+        swap_y_to_x_impl<X, Y>(user, in_amount, min_out_amount);
     }
 
-    public entry fun add_liquidity<X, Y>(user: &signer, pool_account_addr: address, x_added: u64, y_added: u64) acquires Pool, LSPCapabilities {
-        add_liquidity_impl<X, Y>(user, pool_account_addr, x_added, y_added);
+    public entry fun add_liquidity<X, Y>(user: &signer, x_added: u64, y_added: u64) acquires Pool, LSPCapabilities {
+        add_liquidity_impl<X, Y>(user, x_added, y_added);
     }
 
-    public entry fun remove_liquidity<X, Y>(user: &signer, pool_account_addr: address, lsp_amount: u64) acquires Pool, LSPCapabilities, PoolAccount {
-        remove_liquidity_impl<X, Y>(user, pool_account_addr, lsp_amount);
-    }
-
-    public entry fun redeem_admin_balance<X, Y>(owner: &signer, pool_account_addr: address) acquires Pool, PoolAccount {
-        redeem_admin_balance_impl<X, Y>(owner, pool_account_addr);
+    public entry fun remove_liquidity<X, Y>(user: &signer, lsp_amount: u64) acquires Pool, LSPCapabilities {
+        remove_liquidity_impl<X, Y>(user, lsp_amount);
     }
     // ============================================= Entry points =============================================
 
     // ============================================= Public functions =============================================
-    public fun swap_x_to_y_direct<X, Y>(pool_account_addr: address, in_coin: coin::Coin<X>): coin::Coin<Y> acquires Pool, PoolAccount {
-        swap_x_to_y_direct_impl(pool_account_addr, in_coin)
+    public fun swap_x_to_y_direct<X, Y>(in_coin: coin::Coin<X>): coin::Coin<Y> acquires Pool {
+        swap_x_to_y_direct_impl(in_coin)
     }
 
-    public fun swap_y_to_x_direct<X, Y>(pool_account_addr: address, in_coin: coin::Coin<Y>): coin::Coin<X> acquires Pool, PoolAccount {
-        swap_y_to_x_direct_impl(pool_account_addr, in_coin)
+    public fun swap_y_to_x_direct<X, Y>(in_coin: coin::Coin<Y>): coin::Coin<X> acquires Pool {
+        swap_y_to_x_direct_impl(in_coin)
     }
     // ============================================= Public functions =============================================
 
@@ -217,26 +202,11 @@ module Aptoswap::pool {
            freeze: test_freeze_cap,
         });
 
-        // Register the pool account and move the cap to itself
-        let (pool_account, pool_account_cap) = account::create_resource_account(
-            owner,
-            get_seed_from_hint_and_index(b"Aptoswap::PoolAccount", 0)
-        );
-        let pool_account = &pool_account;
-        let pool_account_addr = signer::address_of(pool_account);
-        move_to(
-            pool_account, 
-            PoolAccount { 
-                cap: pool_account_cap 
-            }
-        );
-
         // Move the pool account address to the SwapCap
         let aptos_cap = SwapCap { 
             pool_create_counter: 0,
             pool_create_event: account::new_event_handle<PoolCreateEvent>(owner),
-            test_token_owner_cap: test_token_owner_cap,
-            pool_account_addr: pool_account_addr
+            test_token_owner_cap: test_token_owner_cap
         };
         move_to(owner, aptos_cap);
     }
@@ -271,21 +241,20 @@ module Aptoswap::pool {
         managed_coin::mint<Token>(owner, recipient, amount);
     }
 
-    public(friend) fun create_pool_impl<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64): address acquires SwapCap, Pool, PoolAccount {
+    public(friend) fun create_pool_impl<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64): address acquires SwapCap, Pool {
         let owner_addr = signer::address_of(owner);
 
-        assert!(exists<SwapCap>(owner_addr), EPermissionDenied);
+        assert!(owner_addr == @Aptoswap, EPermissionDenied);
         assert!(lp_fee >= 0, EWrongFee);
         assert!(admin_fee >= 0, EWrongFee);
         assert!(lp_fee + admin_fee < (BPS_SCALING as u64), EWrongFee);
 
+        let pool_account = owner;
+        let pool_account_addr = owner_addr;
+
         let aptos_cap = borrow_global_mut<SwapCap>(owner_addr);
         let pool_index = aptos_cap.pool_create_counter;
         aptos_cap.pool_create_counter = aptos_cap.pool_create_counter + 1;
-
-        let pool_account_addr = aptos_cap.pool_account_addr;
-        let pool_account_struct = borrow_global_mut<PoolAccount>(pool_account_addr);
-        let pool_account = &account::create_signer_with_capability(&pool_account_struct.cap);
 
         // Check whether the pool we've created
         assert!(!exists<Pool<X, Y>>(pool_account_addr), EPoolDuplicate);
@@ -293,10 +262,8 @@ module Aptoswap::pool {
         // Create pool and move
         let pool = Pool<X, Y> {
             index: pool_index,
-            x: 0,
-            y: 0,
-            x_admin: 0,
-            y_admin: 0,
+            x: coin::zero<X>(),
+            y: coin::zero<Y>(),
             lsp_supply: 0,
             admin_fee: admin_fee,
             lp_fee: lp_fee,
@@ -333,7 +300,6 @@ module Aptoswap::pool {
         managed_coin::register<LSP<X, Y>>(pool_account);
 
         let pool = borrow_global<Pool<X, Y>>(pool_account_addr);
-        validate_fund(pool_account_addr, pool);
         validate_lsp(pool);
 
         // Emit event
@@ -347,22 +313,23 @@ module Aptoswap::pool {
         pool_account_addr
     }
 
-    public(friend) fun freeze_or_unfreeze_pool_impl<X, Y>(owner: &signer, pool_account_addr: address, freeze: bool) acquires Pool {
+    public(friend) fun freeze_or_unfreeze_pool_impl<X, Y>(owner: &signer, freeze: bool) acquires Pool {
+        let pool_account_addr = @Aptoswap;
         let owner_addr = signer::address_of(owner);
         assert!(exists<SwapCap>(owner_addr), EPermissionDenied);
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         pool.freeze = freeze;
     }
 
-    public(friend) fun swap_x_to_y_direct_impl<X, Y>(pool_account_addr: address, in_coin: coin::Coin<X>): coin::Coin<Y> acquires Pool, PoolAccount {
+    public(friend) fun swap_x_to_y_direct_impl<X, Y>(in_coin: coin::Coin<X>): coin::Coin<Y> acquires Pool {
+        let pool_account_addr = @Aptoswap;
+
         let in_amount = coin::value(&in_coin);
         assert!(in_amount > 0, EInvalidParameter);
         
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         assert!(pool.freeze == false, EPoolFreeze);
 
-        let pool_account_struct = borrow_global_mut<PoolAccount>(pool_account_addr);
-        let pool_account_signer = &account::create_signer_with_capability(&pool_account_struct.cap);
         let k_before = compute_k(pool);
 
         let (x_reserve_amt, y_reserve_amt, _) = get_amounts(pool);
@@ -371,7 +338,7 @@ module Aptoswap::pool {
         let ComputeShareStruct { 
             remain: x_remain_amt,
             admin: x_admin_amt,
-            lp: x_lp
+            lp: _
         } = compute_share(pool, in_amount);
 
         // Get the output amount
@@ -381,17 +348,17 @@ module Aptoswap::pool {
             y_reserve_amt,
         );
 
-        pool.x_admin = pool.x_admin + x_admin_amt;
-        pool.x = pool.x + x_remain_amt + x_lp;
-        pool.y = pool.y - output_amount;
+        // 1. pool.x_admin = pool.x_admin + x_admin_amt;
+        coin::deposit(@Aptoswap, coin::extract(&mut in_coin, x_admin_amt));
 
-        coin::deposit(pool_account_addr, in_coin);
-        let out_coin = coin::withdraw<Y>(pool_account_signer, output_amount);
+        // 2. pool.x = pool.x + x_remain_amt + x_lp
+        coin::merge(&mut pool.x, in_coin);
+
+        // 3. pool.y = pool.y - output_amount
+        let out_coin = coin::extract(&mut pool.y, output_amount);
 
         let k_after = compute_k(pool);  
         assert!(k_after >= k_before, EComputationError);
-
-        validate_fund(pool_account_addr, pool);
 
         // Emit event
         event::emit_event(
@@ -406,7 +373,7 @@ module Aptoswap::pool {
         out_coin
     }
 
-    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool, PoolAccount {
+    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -419,21 +386,22 @@ module Aptoswap::pool {
         assert!(in_amount <= coin::balance<X>(user_addr), ENotEnoughBalance);
 
         let in_coin = coin::withdraw<X>(user, in_amount);
-        let out_coin = swap_x_to_y_direct_impl<X, Y>(pool_account_addr, in_coin);
+        let out_coin = swap_x_to_y_direct_impl<X, Y>(in_coin);
         assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
 
         coin::deposit(user_addr, out_coin);
     }
 
-    public(friend) fun swap_y_to_x_direct_impl<X, Y>(pool_account_addr: address, in_coin: coin::Coin<Y>): coin::Coin<X> acquires Pool, PoolAccount {
+    public(friend) fun swap_y_to_x_direct_impl<X, Y>(in_coin: coin::Coin<Y>): coin::Coin<X> acquires Pool {
+
+        let pool_account_addr = @Aptoswap;
+
         let in_amount = coin::value(&in_coin);
         assert!(in_amount > 0, EInvalidParameter);
         
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         assert!(pool.freeze == false, EPoolFreeze);
 
-        let pool_account_struct = borrow_global_mut<PoolAccount>(pool_account_addr);
-        let pool_account_signer = &account::create_signer_with_capability(&pool_account_struct.cap);
         let k_before = compute_k(pool);
 
         let (x_reserve_amt, y_reserve_amt, _) = get_amounts(pool);
@@ -442,7 +410,7 @@ module Aptoswap::pool {
         let ComputeShareStruct { 
             remain: y_remain_amt,
             admin: y_admin_amt,
-            lp: y_lp
+            lp: _
         } = compute_share(pool, in_amount);
 
         // Get the output amount
@@ -452,16 +420,17 @@ module Aptoswap::pool {
             x_reserve_amt,
         );
 
-        pool.y_admin = pool.y_admin + y_admin_amt;
-        pool.y = pool.y + y_remain_amt + y_lp;
-        pool.x = pool.x - output_amount;
+        // 1. pool.y_admin = pool.y_admin + y_admin_amt;
+        coin::deposit(@Aptoswap, coin::extract(&mut in_coin, y_admin_amt));
 
-        coin::deposit<Y>(pool_account_addr, in_coin);
-        let out_coin = coin::withdraw<X>(pool_account_signer, output_amount);
+        // 2. pool.y = pool.y + y_remain_amt + y_lp;
+        coin::merge(&mut pool.y, in_coin);
 
-        let k_after = compute_k(pool);  
+        // 3. pool.x = pool.x - output_amount;
+        let out_coin = coin::extract(&mut pool.x, output_amount);
+
+        let k_after = compute_k(pool); 
         assert!(k_after >= k_before, EComputationError);
-        validate_fund(pool_account_addr, pool);
 
         // Emit event
         event::emit_event(
@@ -476,7 +445,7 @@ module Aptoswap::pool {
         out_coin
     }
 
-    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool, PoolAccount {
+    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -489,13 +458,15 @@ module Aptoswap::pool {
         assert!(in_amount <= coin::balance<Y>(user_addr), ENotEnoughBalance);
 
         let in_coin = coin::withdraw<Y>(user, in_amount);
-        let out_coin = swap_y_to_x_direct_impl<X, Y>(pool_account_addr, in_coin);
+        let out_coin = swap_y_to_x_direct_impl<X, Y>(in_coin);
         assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
 
         coin::deposit(user_addr, out_coin);
     }
 
-    public(friend) fun add_liquidity_impl<X, Y>(user: &signer, pool_account_addr: address, x_added: u64, y_added: u64) acquires Pool, LSPCapabilities {
+    public(friend) fun add_liquidity_impl<X, Y>(user: &signer, x_added: u64, y_added: u64) acquires Pool, LSPCapabilities {
+
+        let pool_account_addr = @Aptoswap;
 
         let user_addr = signer::address_of(user);
 
@@ -536,8 +507,6 @@ module Aptoswap::pool {
 
         // Transfer the X, Y to the pool and transfer 
         let mint_cap = &borrow_global<LSPCapabilities<X, Y>>(pool_account_addr).mint;
-        coin::transfer<X>(user, pool_account_addr, x_added);
-        coin::transfer<Y>(user, pool_account_addr, y_added);
 
         // Depsoit the coin to user
         if (!coin::is_account_registered<LSP<X, Y>>(user_addr)) {
@@ -550,8 +519,10 @@ module Aptoswap::pool {
                 mint_cap
             )
         );
-        pool.x = pool.x + x_added;
-        pool.y = pool.y + y_added;
+        // 1. pool.x = pool.x + x_added;
+        coin::merge(&mut pool.x, coin::withdraw(user, x_added));
+        // 2. pool.y = pool.y + y_added;
+        coin::merge(&mut pool.y, coin::withdraw(user, y_added));
         pool.lsp_supply = pool.lsp_supply + share_minted;
 
         // Check:
@@ -568,7 +539,6 @@ module Aptoswap::pool {
             assert!(y_amt_ * lsp_supply_after_ <= y_amt_after_ * lsp_supply_, EComputationError);
         };
 
-        validate_fund(pool_account_addr, pool);
         validate_lsp(pool);
 
         event::emit_event(
@@ -582,7 +552,9 @@ module Aptoswap::pool {
         );
     }
 
-    public(friend) fun remove_liquidity_impl<X, Y>(user: &signer, pool_account_addr: address, lsp_amount: u64) acquires Pool, LSPCapabilities, PoolAccount {
+    public(friend) fun remove_liquidity_impl<X, Y>(user: &signer, lsp_amount: u64) acquires Pool, LSPCapabilities {
+
+        let pool_account_addr = @Aptoswap;
 
         let user_addr = signer::address_of(user);
 
@@ -593,9 +565,6 @@ module Aptoswap::pool {
         // Note: We don't need freeze check, user can still burn lsp token and get original token when pool
         // is freeze
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
-        
-        let pool_account_struct = borrow_global_mut<PoolAccount>(pool_account_addr);
-        let pool_account_signer = &account::create_signer_with_capability(&pool_account_struct.cap);
 
         // We should make the value "token / lsp" larger than the previous value before removing liqudity
         // Thus 
@@ -614,8 +583,12 @@ module Aptoswap::pool {
         let y_removed = (y_removed as u64);
 
         let burn_cap = &borrow_global<LSPCapabilities<X, Y>>(pool_account_addr).burn;
-        pool.x = pool.x - x_removed;
-        pool.y = pool.y - y_removed;
+
+        // 1. pool.x = pool.x - x_removed;
+        let coin_x_removed = coin::extract(&mut pool.x, x_removed);
+        // 2. pool.y = pool.y - y_removed;
+        let coin_y_removed = coin::extract(&mut pool.y, y_removed);
+
         pool.lsp_supply = pool.lsp_supply - lsp_amount;
         if (!coin::is_account_registered<X>(user_addr)) {
             managed_coin::register<X>(user);
@@ -623,8 +596,10 @@ module Aptoswap::pool {
         if (!coin::is_account_registered<Y>(user_addr)) {
             managed_coin::register<Y>(user);
         };
-        coin::transfer<X>(pool_account_signer, user_addr, x_removed);
-        coin::transfer<Y>(pool_account_signer, user_addr, y_removed);
+
+        coin::deposit(user_addr, coin_x_removed);
+        coin::deposit(user_addr, coin_y_removed);
+
         coin::burn_from<LSP<X, Y>>(user_addr, lsp_amount, burn_cap);
 
         // Check:
@@ -641,7 +616,6 @@ module Aptoswap::pool {
             assert!(y_amt_ * lsp_supply_after_ <= y_amt_after_ * lsp_supply_, EComputationError);
         };
 
-        validate_fund(pool_account_addr, pool);
         validate_lsp(pool);
 
         event::emit_event(
@@ -654,35 +628,6 @@ module Aptoswap::pool {
             }
         );
     }
-
-    public(friend) fun redeem_admin_balance_impl<X, Y>(owner: &signer, pool_account_addr: address) acquires Pool, PoolAccount {
-        let owner_addr = signer::address_of(owner);
-        assert!(exists<SwapCap>(owner_addr), EPermissionDenied);
-
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
-        let pool_account_struct = borrow_global_mut<PoolAccount>(pool_account_addr);
-        let pool_account_signer = &account::create_signer_with_capability(&pool_account_struct.cap);
-
-        if (pool.x_admin > 0)
-        {
-            if (!coin::is_account_registered<X>(owner_addr)) {
-                managed_coin::register<X>(owner);
-            };
-            coin::transfer<X>(pool_account_signer, owner_addr, pool.x_admin);
-            pool.x_admin = 0;
-        };
-
-        if (pool.y_admin > 0)
-        {
-            if (!coin::is_account_registered<Y>(owner_addr)) {
-                managed_coin::register<Y>(owner);
-            };
-            coin::transfer<Y>(pool_account_signer, owner_addr, pool.y_admin);
-            pool.y_admin = 0;
-        };
-
-        validate_fund(pool_account_addr, pool);
-    }
     // ============================================= Implementations =============================================
 
     // ============================================= Helper Function =============================================
@@ -691,43 +636,33 @@ module Aptoswap::pool {
         exists<SwapCap>(addr)
     }
 
-    public(friend) fun is_pool_freeze<X, Y>(pool_account_addr: address): bool acquires Pool {
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+    public(friend) fun is_pool_freeze<X, Y>(): bool acquires Pool {
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.freeze
     }
 
-    public(friend) fun get_pool_x<X, Y>(pool_account_addr: address): u64  acquires Pool { 
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
-        pool.x
+    public(friend) fun get_pool_x<X, Y>(): u64  acquires Pool { 
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
+        coin::value(&pool.x)
     }
 
-    public(friend) fun get_pool_y<X, Y>(pool_account_addr: address): u64  acquires Pool { 
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
-        pool.y
+    public(friend) fun get_pool_y<X, Y>(): u64  acquires Pool { 
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
+        coin::value(&pool.y)
     }
 
-    public(friend) fun get_pool_x_admin<X, Y>(pool_account_addr: address): u64  acquires Pool { 
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
-        pool.x_admin
-    }
-
-    public(friend) fun get_pool_y_admin<X, Y>(pool_account_addr: address): u64  acquires Pool { 
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
-        pool.y_admin
-    }
-
-    public(friend) fun get_pool_lsp_supply<X, Y>(pool_account_addr: address): u64  acquires Pool { 
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+    public(friend) fun get_pool_lsp_supply<X, Y>(): u64  acquires Pool { 
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.lsp_supply
     }
 
-    public(friend) fun get_pool_admin_fee<X, Y>(pool_account_addr: address): u64 acquires Pool {
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+    public(friend) fun get_pool_admin_fee<X, Y>(): u64 acquires Pool {
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.admin_fee
     }
 
-    public(friend) fun get_pool_lp_fee<X, Y>(pool_account_addr: address): u64 acquires Pool {
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+    public(friend) fun get_pool_lp_fee<X, Y>(): u64 acquires Pool {
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.lp_fee
     }
 
@@ -737,17 +672,16 @@ module Aptoswap::pool {
     /// - amount of token
     /// - amount of current LSP
     public(friend) fun get_amounts<X, Y>(pool: &Pool<X, Y>): (u64, u64, u64) {
-        (pool.x, pool.y, pool.lsp_supply)
+        (
+            coin::value(&pool.x),
+            coin::value(&pool.y), 
+            pool.lsp_supply
+        )
     }
 
     /// Get current lsp supply in the pool
     public(friend) fun get_lsp_supply<X, Y>(pool: &Pool<X, Y>): u64 {
         pool.lsp_supply
-    }
-
-    /// Get The admin X and Y token balance value
-    public(friend) fun get_admin_amounts<X, Y>(pool: &Pool<X, Y>): (u64, u64) {
-        (pool.x_admin, pool.y_admin)
     }
 
     /// Given dx (dx > 0), x and y. Ensure the constant product 
@@ -808,26 +742,13 @@ module Aptoswap::pool {
         (x_amt as u128) * (y_amt as u128)
     }
 
-    public(friend) fun validate_fund<X, Y>(pool_account_addr: address, pool: &Pool<X, Y>) {
-        // Validate the fund in the pool account is enough
-        // We use >= instead of == to ensure that someone might directly transfer coin into the pool account
-        assert!(coin::balance<X>(pool_account_addr) >= pool.x + pool.x_admin, EComputationError);
-        assert!(coin::balance<Y>(pool_account_addr) >= pool.y + pool.y_admin, EComputationError);
-    }
-
-    #[test_only]
-    public(friend) fun validate_fund_strict<X, Y>(pool_account_addr: address) acquires Pool {
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
-        assert!(coin::balance<X>(pool_account_addr) == pool.x + pool.x_admin, EComputationError);
-        assert!(coin::balance<Y>(pool_account_addr) == pool.y + pool.y_admin, EComputationError);
-    }
-
     fun validate_lsp<X, Y>(pool: &Pool<X, Y>) {
         let lsp_supply_checked = *option::borrow(&coin::supply<LSP<X, Y>>());
         assert!(lsp_supply_checked == (pool.lsp_supply as u128), EComputationError);
     }
 
-    public(friend) fun validate_lsp_from_address<X, Y>(pool_account_addr: address) acquires Pool {
+    public(friend) fun validate_lsp_from_address<X, Y>() acquires Pool {
+        let pool_account_addr = @Aptoswap;
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         let lsp_supply_checked = *option::borrow(&coin::supply<LSP<X, Y>>());
         assert!(lsp_supply_checked == (pool.lsp_supply as u128), EComputationError);

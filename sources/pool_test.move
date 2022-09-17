@@ -7,7 +7,7 @@ module Aptoswap::pool_test {
     use aptos_framework::coin;
     use aptos_framework::account;
 
-    use Aptoswap::pool::{ swap_y_to_x_impl, initialize_impl, redeem_admin_balance_impl, add_liquidity_impl, create_pool_impl, swap_x_to_y_impl, freeze_pool, unfreeze_pool, is_pool_freeze, validate_fund_strict, validate_lsp_from_address, get_pool_x, get_pool_y, get_pool_x_admin, get_pool_y_admin, get_pool_lsp_supply, is_swap_cap_exists, get_pool_admin_fee, get_pool_lp_fee, remove_liquidity_impl};
+    use Aptoswap::pool::{ swap_y_to_x_impl, initialize_impl, add_liquidity_impl, create_pool_impl, swap_x_to_y_impl, freeze_pool, unfreeze_pool, is_pool_freeze, validate_lsp_from_address, get_pool_x, get_pool_y,  get_pool_lsp_supply, is_swap_cap_exists, get_pool_admin_fee, get_pool_lp_fee, remove_liquidity_impl};
     use Aptoswap::pool::{ LSP, Token };
 
     // ============================================= Test Case =============================================
@@ -46,28 +46,12 @@ module Aptoswap::pool_test {
     }
 
     #[test(admin = @Aptoswap, guy = @0x10000)]
-    #[expected_failure(abort_code = 134007)] // EPermissionDenied
-    fun test_swap_x_to_y_check_account_no_permission(admin: signer, guy: signer) {
-        test_swap_x_to_y_impl(
-            &admin, 
-            &guy, 
-            TestSwapConfig {
-                check_account_no_permision: true,
-                check_balance_empty: false,
-                check_balance_not_enough: false,
-                check_pool_freeze: false
-            }
-        );
-    }
-
-    #[test(admin = @Aptoswap, guy = @0x10000)]
     #[expected_failure(abort_code = 134008)] // ENotEnoughBalance
     fun test_swap_x_to_y_check_balance_empty(admin: signer, guy: signer) {
         test_swap_x_to_y_impl(
             &admin, 
             &guy, 
             TestSwapConfig {
-                check_account_no_permision: false,
                 check_balance_empty: true,
                 check_balance_not_enough: false,
                 check_pool_freeze: false
@@ -82,7 +66,6 @@ module Aptoswap::pool_test {
             &admin, 
             &guy, 
             TestSwapConfig {
-                check_account_no_permision: false,
                 check_balance_empty: false,
                 check_balance_not_enough: true,
                 check_pool_freeze: false
@@ -97,7 +80,6 @@ module Aptoswap::pool_test {
             &admin, 
             &guy, 
             TestSwapConfig {
-                check_account_no_permision: false,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
                 check_pool_freeze: true
@@ -112,22 +94,6 @@ module Aptoswap::pool_test {
             &admin, 
             &guy, 
             TestSwapConfig {
-                check_account_no_permision: false,
-                check_balance_empty: false,
-                check_balance_not_enough: false,
-                check_pool_freeze: false
-            }
-        );
-    }
-
-    #[test(admin = @Aptoswap, guy = @0x10000)]
-    #[expected_failure(abort_code = 134007)] // EPermissionDenied
-    fun test_swap_y_to_x_check_account_no_permission(admin: signer, guy: signer) {
-        test_swap_y_to_x_impl(
-            &admin, 
-            &guy, 
-            TestSwapConfig {
-                check_account_no_permision: true,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
                 check_pool_freeze: false
@@ -143,7 +109,6 @@ module Aptoswap::pool_test {
             &admin, 
             &guy, 
             TestSwapConfig {
-                check_account_no_permision: false,
                 check_balance_empty: true,
                 check_balance_not_enough: false,
                 check_pool_freeze: false
@@ -158,7 +123,6 @@ module Aptoswap::pool_test {
             &admin, 
             &guy, 
             TestSwapConfig {
-                check_account_no_permision: false,
                 check_balance_empty: false,
                 check_balance_not_enough: true,
                 check_pool_freeze: false
@@ -173,7 +137,6 @@ module Aptoswap::pool_test {
             &admin, 
             &guy, 
             TestSwapConfig {
-                check_account_no_permision: false,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
                 check_pool_freeze: true
@@ -454,13 +417,13 @@ module Aptoswap::pool_test {
     fun test_freeze_pool_impl(admin: &signer) {
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
-        let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+         test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
 
-        freeze_pool<TX, TY>(admin, pool_account_addr);
-        assert!(is_pool_freeze<TX, TY>(pool_account_addr) == true, 0);
+        freeze_pool<TX, TY>(admin);
+        assert!(is_pool_freeze<TX, TY>() == true, 0);
 
-        unfreeze_pool<TX, TY>(admin, pool_account_addr);
-        assert!(is_pool_freeze<TX, TY>(pool_account_addr) == false, 0);
+        unfreeze_pool<TX, TY>(admin);
+        assert!(is_pool_freeze<TX, TY>() == false, 0);
     }
 
     #[test_only]
@@ -470,16 +433,15 @@ module Aptoswap::pool_test {
         account::create_account_for_test(admin_addr);
         account::create_account_for_test(guy_addr);
 
-        let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+        test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
         if (freeze) {
-            freeze_pool<TX, TY>(guy, pool_account_addr);
+            freeze_pool<TX, TY>(guy);
         } else {
-            unfreeze_pool<TX, TY>(guy, pool_account_addr);
+            unfreeze_pool<TX, TY>(guy);
         };
     }
 
     struct TestSwapConfig has copy, drop {
-        check_account_no_permision: bool,
         check_balance_empty: bool,
         check_balance_not_enough: bool,
         check_pool_freeze: bool
@@ -490,7 +452,6 @@ module Aptoswap::pool_test {
         test_swap_x_to_y_impl(
             admin, guy,
             TestSwapConfig {
-                check_account_no_permision: false,
                 check_balance_empty: false,
                 check_balance_not_enough: false,
                 check_pool_freeze: false
@@ -509,9 +470,9 @@ module Aptoswap::pool_test {
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
 
         // Doing a extra freeze -> unfreeze to check whether unfreeze is also okay
-        freeze_pool<TX, TY>(admin, pool_account_addr);
+        freeze_pool<TX, TY>(admin);
         if (!config.check_pool_freeze) {
-            unfreeze_pool<TX, TY>(admin, pool_account_addr);
+            unfreeze_pool<TX, TY>(admin);
         };
 
         managed_coin::register<TX>(guy);
@@ -524,29 +485,21 @@ module Aptoswap::pool_test {
             };
         };
 
-        swap_x_to_y_impl<TX, TY>(guy, pool_account_addr, 5000, 0);
-
-        // Check pool balance and guy balance
-        validate_fund_strict<TX, TY>(pool_account_addr);
-        validate_lsp_from_address<TX, TY>(pool_account_addr);
-        assert!(coin::balance<TY>(guy_addr) == 4959282, 0);
-        assert!(get_pool_x<TX, TY>(pool_account_addr) == 1004997, 1);
-        assert!(get_pool_y<TX, TY>(pool_account_addr) == 995040718, 2);
-        assert!(get_pool_x_admin<TX, TY>(pool_account_addr) == 3, 3);
-        assert!(get_pool_y_admin<TX, TY>(pool_account_addr) == 0, 4);
-
         // Redeem the profit
-        let (check_user, check_user_addr) = if (config.check_account_no_permision) { (guy, guy_addr) } else { (admin,admin_addr) };
         let old_balance_tx = coin::balance<TX>(admin_addr);
         let old_balance_ty = coin::balance<TY>(admin_addr);
+
+        swap_x_to_y_impl<TX, TY>(guy, 5000, 0);
+
+        // Check pool balance and guy balance
+        validate_lsp_from_address<TX, TY>();
+        assert!(coin::balance<TY>(guy_addr) == 4959282, 0);
+        assert!(get_pool_x<TX, TY>() == 1004997, 1);
+        assert!(get_pool_y<TX, TY>() == 995040718, 2);
         
-        redeem_admin_balance_impl<TX, TY>(check_user, pool_account_addr);
-        assert!(coin::balance<TX>(check_user_addr) == old_balance_tx + 3, 0);
-        assert!(coin::balance<TY>(check_user_addr) == old_balance_ty, 0);
-        assert!(get_pool_x_admin<TX, TY>(pool_account_addr) == 0, 0);
-        assert!(get_pool_y_admin<TX, TY>(pool_account_addr) == 0, 0);
-        validate_fund_strict<TX, TY>(pool_account_addr);
-        validate_lsp_from_address<TX, TY>(pool_account_addr);
+        assert!(coin::balance<TX>(admin_addr) == old_balance_tx + 3, 0);
+        assert!(coin::balance<TY>(admin_addr) == old_balance_ty, 0);
+        validate_lsp_from_address<TX, TY>();
 
         pool_account_addr
     }
@@ -562,9 +515,9 @@ module Aptoswap::pool_test {
         let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
         
         // Doing a extra freeze -> unfreeze to check whether unfreeze is also okay
-        freeze_pool<TX, TY>(admin, pool_account_addr);
+        freeze_pool<TX, TY>(admin);
         if (!config.check_pool_freeze) {
-            unfreeze_pool<TX, TY>(admin, pool_account_addr);
+            unfreeze_pool<TX, TY>(admin);
         };
 
         managed_coin::register<TY>(guy);
@@ -577,28 +530,20 @@ module Aptoswap::pool_test {
             };
         };
 
-        swap_y_to_x_impl<TX, TY>(guy, pool_account_addr, 5000000, 0);
-
-        validate_fund_strict<TX, TY>(pool_account_addr);
-        validate_lsp_from_address<TX, TY>(pool_account_addr);
-        assert!(coin::balance<TX>(guy_addr) == 4960, 0);
-        assert!(get_pool_x<TX, TY>(pool_account_addr) == 995040, 1);
-        assert!(get_pool_y<TX, TY>(pool_account_addr) == 1004997500, 2);
-        assert!(get_pool_x_admin<TX, TY>(pool_account_addr) == 0, 3);
-        assert!(get_pool_y_admin<TX, TY>(pool_account_addr) == 2500, 4);
-
         // Redeem the profit
-        let (check_user, check_user_addr) = if (config.check_account_no_permision) { (guy, guy_addr) } else { (admin,admin_addr) };
         let old_balance_tx = coin::balance<TX>(admin_addr);
         let old_balance_ty = coin::balance<TY>(admin_addr);
+
+        swap_y_to_x_impl<TX, TY>(guy, 5000000, 0);
+
+        validate_lsp_from_address<TX, TY>();
+        assert!(coin::balance<TX>(guy_addr) == 4960, 0);
+        assert!(get_pool_x<TX, TY>() == 995040, 1);
+        assert!(get_pool_y<TX, TY>() == 1004997500, 2);
         
-        redeem_admin_balance_impl<TX, TY>(check_user, pool_account_addr);
-        assert!(coin::balance<TX>(check_user_addr) == old_balance_tx, 0);
-        assert!(coin::balance<TY>(check_user_addr) == old_balance_ty + 2500, 0);
-        assert!(get_pool_x_admin<TX, TY>(pool_account_addr) == 0, 0);
-        assert!(get_pool_y_admin<TX, TY>(pool_account_addr) == 0, 0);
-        validate_fund_strict<TX, TY>(pool_account_addr);
-        validate_lsp_from_address<TX, TY>(pool_account_addr);
+        assert!(coin::balance<TX>(admin_addr) == old_balance_tx, 0);
+        assert!(coin::balance<TY>(admin_addr) == old_balance_ty + 2500, 0);
+        validate_lsp_from_address<TX, TY>();
 
         pool_account_addr
     }
@@ -629,17 +574,17 @@ module Aptoswap::pool_test {
         account::create_account_for_test(admin_addr);
         account::create_account_for_test(guy_addr);
 
-        let pool_account_addr = test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
+        test_utils_create_pool(admin, TEST_X_AMT, TEST_Y_AMT);
 
         // Doing a extra freeze -> unfreeze to check whether unfreeze is also okay
-        freeze_pool<TX, TY>(admin, pool_account_addr);
+        freeze_pool<TX, TY>(admin);
         if (!config.check_pool_freeze) {
-            unfreeze_pool<TX, TY>(admin, pool_account_addr);
+            unfreeze_pool<TX, TY>(admin);
         };
 
-        let x_pool = get_pool_x<TX, TY>(pool_account_addr);
-        let y_pool = get_pool_y<TX, TY>(pool_account_addr);
-        let lsp_pool = get_pool_lsp_supply<TX, TY>(pool_account_addr);
+        let x_pool = get_pool_x<TX, TY>();
+        let y_pool = get_pool_y<TX, TY>();
+        let lsp_pool = get_pool_lsp_supply<TX, TY>();
 
         if (!config.check_x_not_register) {
             managed_coin::register<TX>(guy);
@@ -654,9 +599,8 @@ module Aptoswap::pool_test {
             };
         };
 
-        add_liquidity_impl<TX, TY>(guy, pool_account_addr, x_added, y_added);
-        validate_fund_strict<TX, TY>(pool_account_addr);
-        validate_lsp_from_address<TX, TY>(pool_account_addr);
+        add_liquidity_impl<TX, TY>(guy, x_added, y_added);
+        validate_lsp_from_address<TX, TY>();
 
         let lsp_checked_x = (x_added as u128) * (lsp_pool as u128) / (x_pool as u128);
         let lsp_checked_y = (y_added as u128) * (lsp_pool as u128) / (y_pool as u128);
@@ -684,7 +628,7 @@ module Aptoswap::pool_test {
 
     #[test_only]
     fun test_withdraw_liquidity_impl(admin: &signer, guy: &signer, lsp_left: u64, config: TestWithdrawLiqudityConfig) {
-        let pool_account_addr = test_swap_x_to_y_default_impl(admin, guy);
+        test_swap_x_to_y_default_impl(admin, guy);
         let admin_addr = signer::address_of(admin);
         let guy_addr = signer::address_of(guy);
 
@@ -699,23 +643,22 @@ module Aptoswap::pool_test {
         };
 
         let lsp_take = TEST_LSP_AMT - lsp_left;
-        let (x_pool_ori_amt, y_pool_ori_amt) = (get_pool_x<TX, TY>(pool_account_addr), get_pool_y<TX, TY>(pool_account_addr));
+        let (x_pool_ori_amt, y_pool_ori_amt) = (get_pool_x<TX, TY>(), get_pool_y<TX, TY>());
         let old_balance_tx = coin::balance<TX>(guy_addr);
         let old_balance_ty = coin::balance<TY>(guy_addr);
         
         if (!config.check_lsp_amount_larger) {
-            remove_liquidity_impl<TX, TY>(guy, pool_account_addr, lsp_take);
+            remove_liquidity_impl<TX, TY>(guy, lsp_take);
         } else {
-            remove_liquidity_impl<TX, TY>(guy, pool_account_addr, lsp_take + 1);
+            remove_liquidity_impl<TX, TY>(guy, lsp_take + 1);
         };
 
-        validate_fund_strict<TX, TY>(pool_account_addr);
-        validate_lsp_from_address<TX, TY>(pool_account_addr);
+        validate_lsp_from_address<TX, TY>();
 
         let (x_pool_amt, y_pool_amt, lsp_supply) = (
-            get_pool_x<TX, TY>(pool_account_addr), 
-            get_pool_y<TX, TY>(pool_account_addr), 
-            get_pool_lsp_supply<TX, TY>(pool_account_addr)
+            get_pool_x<TX, TY>(), 
+            get_pool_y<TX, TY>(), 
+            get_pool_lsp_supply<TX, TY>()
         );
         let x_guy_amt_chekced = (((1004997 as u128) * (lsp_take as u128) / (TEST_LSP_AMT as u128)) as u64);
         let y_guy_amt_checked = (((995040718 as u128) * (lsp_take as u128) / (TEST_LSP_AMT as u128)) as u64);
@@ -749,43 +692,31 @@ module Aptoswap::pool_test {
         let pool_account_addr = create_pool_impl<TX, TY>(admin, 5, 25);
         assert!(coin::is_coin_initialized<LSP<TX, TY>>(), 6);
         assert!(coin::is_account_registered<LSP<TX, TY>>(pool_account_addr), 7);
-        assert!(coin::balance<TX>(pool_account_addr) == 0, 0);
-        assert!(coin::balance<TY>(pool_account_addr) == 0, 0);
-        assert!(coin::balance<LSP<TX, TY>>(pool_account_addr) == 0, 0);
-        assert!(get_pool_x<TX, TY>(pool_account_addr) == 0, 0);
-        assert!(get_pool_y<TX, TY>(pool_account_addr) == 0, 0);
-        assert!(get_pool_x_admin<TX, TY>(pool_account_addr) == 0, 0);
-        assert!(get_pool_y_admin<TX, TY>(pool_account_addr) == 0, 0);
-        assert!(get_pool_lsp_supply<TX, TY>(pool_account_addr) == 0, 0);
-        assert!(get_pool_admin_fee<TX, TY>(pool_account_addr) == 5, 0);
-        assert!(get_pool_lp_fee<TX, TY>(pool_account_addr) == 25, 0);
+        assert!(get_pool_x<TX, TY>() == 0, 0);
+        assert!(get_pool_y<TX, TY>() == 0, 0);
+        assert!(get_pool_lsp_supply<TX, TY>() == 0, 0);
+        assert!(get_pool_admin_fee<TX, TY>() == 5, 0);
+        assert!(get_pool_lp_fee<TX, TY>() == 25, 0);
 
-        validate_fund_strict<TX, TY>(pool_account_addr);
-        validate_lsp_from_address<TX, TY>(pool_account_addr);
+        validate_lsp_from_address<TX, TY>();
 
         // Register & mint some coin
-        managed_coin::register<TX>(admin);
-        managed_coin::register<TY>(admin);
         assert!(coin::is_account_registered<TX>(admin_addr), 3);
         assert!(coin::is_account_registered<TY>(admin_addr), 4);
         managed_coin::mint<TX>(admin, admin_addr, init_x_amt);
         managed_coin::mint<TY>(admin, admin_addr, init_y_amt);
         assert!(coin::balance<TX>(admin_addr) == init_x_amt, 5);
         assert!(coin::balance<TY>(admin_addr) == init_y_amt, 5);
-        add_liquidity_impl<TX, TY>(admin, pool_account_addr, init_x_amt, init_y_amt);
-        validate_fund_strict<TX, TY>(pool_account_addr);
-        validate_lsp_from_address<TX, TY>(pool_account_addr);
+        add_liquidity_impl<TX, TY>(admin, init_x_amt, init_y_amt);
+        validate_lsp_from_address<TX, TY>();
         
         // let _ = borrow_global<LSPCapabilities<TX, TY>>(pool_account_addr);
         assert!(coin::balance<LSP<TX, TY>>(admin_addr) > 0, 8);
-        assert!(coin::balance<LSP<TX, TY>>(admin_addr) == get_pool_lsp_supply<TX, TY>(pool_account_addr), 8);
+        assert!(coin::balance<LSP<TX, TY>>(admin_addr) == get_pool_lsp_supply<TX, TY>(), 8);
 
         // Use == for testing
-        assert!(get_pool_x_admin<TX, TY>(pool_account_addr) == 0 && get_pool_y_admin<TX, TY>(pool_account_addr) == 0, 9);
-        assert!(coin::balance<TX>(pool_account_addr) == get_pool_x<TX, TY>(pool_account_addr), 9);
-        assert!(coin::balance<TY>(pool_account_addr) == get_pool_y<TX, TY>(pool_account_addr), 9);
-        assert!(get_pool_x<TX, TY>(pool_account_addr) == init_x_amt, 9);
-        assert!(get_pool_y<TX, TY>(pool_account_addr) == init_y_amt, 10);
+        assert!(get_pool_x<TX, TY>() == init_x_amt, 9);
+        assert!(get_pool_y<TX, TY>() == init_y_amt, 10);
 
         pool_account_addr
     }
@@ -816,7 +747,7 @@ module Aptoswap::pool_test {
         let admin_addr = signer::address_of(admin);
         account::create_account_for_test(admin_addr);
 
-        let pool_account_addr = test_utils_create_pool(admin, s.x_init, s.y_init);
+        test_utils_create_pool(admin, s.x_init, s.y_init);
 
         let i: u64 = 0;
         let data_legnth: u64 = vector::length(&s.data);
@@ -830,16 +761,16 @@ module Aptoswap::pool_test {
             if (info.x_added > 0) 
             {
                 managed_coin::mint<TX>(admin, admin_addr, info.x_added);
-                swap_x_to_y_impl<TX, TY>(admin, pool_account_addr, info.x_added, 0);
+                swap_x_to_y_impl<TX, TY>(admin, info.x_added, 0);
             }
             else if (info.y_added > 0) 
             {
                 managed_coin::mint<TY>(admin, admin_addr, info.y_added);
-                swap_y_to_x_impl<TX, TY>(admin, pool_account_addr, info.y_added, 0);
+                swap_y_to_x_impl<TX, TY>(admin, info.y_added, 0);
             };
 
             // Check the data matches the simulate data
-            let (x_amt, y_amt) = (get_pool_x<TX, TY>(pool_account_addr), get_pool_y<TX, TY>(pool_account_addr));
+            let (x_amt, y_amt) = (get_pool_x<TX, TY>(), get_pool_y<TX, TY>());
             assert!(x_amt == info.x_checked, i);
             assert!(y_amt == info.y_checked, i);
             
