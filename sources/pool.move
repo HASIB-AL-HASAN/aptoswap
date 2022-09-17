@@ -344,20 +344,9 @@ module Aptoswap::pool {
         pool.freeze = freeze;
     }
 
-    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool, PoolAccount {
-
-        let user_addr = signer::address_of(user);
-
+    public(friend) fun swap_x_to_y_direct_impl<X, Y>(pool_account_addr: address, in_coin: coin::Coin<X>): coin::Coin<Y> acquires Pool, PoolAccount {
+        let in_amount = coin::value(&in_coin);
         assert!(in_amount > 0, EInvalidParameter);
-        if (!coin::is_account_registered<X>(user_addr)) {
-            managed_coin::register<X>(user);
-        };
-        if (!coin::is_account_registered<Y>(user_addr)) {
-            managed_coin::register<Y>(user);
-        };
-        // assert!(coin::is_account_registered<X>(user_addr), ECoinNotRegister);
-        // assert!(coin::is_account_registered<Y>(user_addr), ECoinNotRegister);
-        assert!(in_amount <= coin::balance<X>(user_addr), ENotEnoughBalance);
         
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         assert!(pool.freeze == false, EPoolFreeze);
@@ -381,14 +370,13 @@ module Aptoswap::pool {
             x_reserve_amt,
             y_reserve_amt,
         );
-        assert!(output_amount >= min_out_amount, ESlippageLimit);
 
         pool.x_admin = pool.x_admin + x_admin_amt;
         pool.x = pool.x + x_remain_amt + x_lp;
         pool.y = pool.y - output_amount;
 
-        coin::transfer<X>(user, pool_account_addr, in_amount);
-        coin::transfer<Y>(pool_account_signer, user_addr, output_amount);
+        coin::deposit(pool_account_addr, in_coin);
+        let out_coin = coin::withdraw<Y>(pool_account_signer, output_amount);
 
         let k_after = compute_k(pool);  
         assert!(k_after >= k_before, EComputationError);
@@ -404,9 +392,11 @@ module Aptoswap::pool {
                 out_amount: output_amount
             }
         );
+
+        out_coin
     }
 
-    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool, PoolAccount {
+    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool, PoolAccount {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -416,9 +406,18 @@ module Aptoswap::pool {
         if (!coin::is_account_registered<Y>(user_addr)) {
             managed_coin::register<Y>(user);
         };
-        // assert!(coin::is_account_registered<X>(user_addr), ECoinNotRegister);
-        // assert!(coin::is_account_registered<Y>(user_addr), ECoinNotRegister);
-        assert!(in_amount <= coin::balance<Y>(user_addr), ENotEnoughBalance);
+        assert!(in_amount <= coin::balance<X>(user_addr), ENotEnoughBalance);
+
+        let in_coin = coin::withdraw<X>(user, in_amount);
+        let out_coin = swap_x_to_y_direct_impl<X, Y>(pool_account_addr, in_coin);
+        assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
+
+        coin::deposit(user_addr, out_coin);
+    }
+
+    public(friend) fun swap_y_to_x_direct_impl<X, Y>(pool_account_addr: address, in_coin: coin::Coin<Y>): coin::Coin<X> acquires Pool, PoolAccount {
+        let in_amount = coin::value(&in_coin);
+        assert!(in_amount > 0, EInvalidParameter);
         
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         assert!(pool.freeze == false, EPoolFreeze);
@@ -442,14 +441,13 @@ module Aptoswap::pool {
             y_reserve_amt,
             x_reserve_amt,
         );
-        assert!(output_amount >= min_out_amount, ESlippageLimit);
 
         pool.y_admin = pool.y_admin + y_admin_amt;
         pool.y = pool.y + y_remain_amt + y_lp;
         pool.x = pool.x - output_amount;
 
-        coin::transfer<Y>(user, pool_account_addr, in_amount);
-        coin::transfer<X>(pool_account_signer, user_addr, output_amount);
+        coin::deposit<Y>(pool_account_addr, in_coin);
+        let out_coin = coin::withdraw<X>(pool_account_signer, output_amount);
 
         let k_after = compute_k(pool);  
         assert!(k_after >= k_before, EComputationError);
@@ -464,6 +462,27 @@ module Aptoswap::pool {
                 out_amount: output_amount
             }
         );
+
+        out_coin
+    }
+
+    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, pool_account_addr: address, in_amount: u64, min_out_amount: u64) acquires Pool, PoolAccount {
+        let user_addr = signer::address_of(user);
+
+        assert!(in_amount > 0, EInvalidParameter);
+        if (!coin::is_account_registered<X>(user_addr)) {
+            managed_coin::register<X>(user);
+        };
+        if (!coin::is_account_registered<Y>(user_addr)) {
+            managed_coin::register<Y>(user);
+        };
+        assert!(in_amount <= coin::balance<Y>(user_addr), ENotEnoughBalance);
+
+        let in_coin = coin::withdraw<Y>(user, in_amount);
+        let out_coin = swap_y_to_x_direct_impl<X, Y>(pool_account_addr, in_coin);
+        assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
+
+        coin::deposit(user_addr, out_coin);
     }
 
     public(friend) fun add_liquidity_impl<X, Y>(user: &signer, pool_account_addr: address, x_added: u64, y_added: u64) acquires Pool, LSPCapabilities {
