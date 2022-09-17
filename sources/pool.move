@@ -174,6 +174,16 @@ module Aptoswap::pool {
     }
     // ============================================= Entry points =============================================
 
+    // ============================================= Public functions =============================================
+    public fun swap_x_to_y_direct<X, Y>(pool_account_addr: address, in_coin: coin::Coin<X>): coin::Coin<Y> acquires Pool, PoolAccount {
+        swap_x_to_y_direct_impl(pool_account_addr, in_coin)
+    }
+
+    public fun swap_y_to_x_direct<X, Y>(pool_account_addr: address, in_coin: coin::Coin<Y>): coin::Coin<X> acquires Pool, PoolAccount {
+        swap_y_to_x_direct_impl(pool_account_addr, in_coin)
+    }
+    // ============================================= Public functions =============================================
+
 
     // ============================================= Implementations =============================================
     public(friend) fun initialize_impl(owner: &signer, demicals: u8) {
