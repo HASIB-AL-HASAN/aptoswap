@@ -15,14 +15,8 @@ aptos init --profile default --rest-url http://localhost:8080 --faucet-url http:
 
 ### Publish Compile Package
 
-> For local net development, ensuring that the node is already started before running the scirpt. 
-> Normally, the full node rest starts at port 8080 and port 8081. For example:
-> ```
-> aptos node run-local-testnet --with-faucet --faucet-port 8081 --force-restart --assume-yes
-> ```
-
-- For local publish, run `APTOSWAP_PUBLISH_NETWORK="local" ./script/publish.sh"`
-- For devnet publish, run `APTOSWAP_PUBLISH_NETWORK="devnet" ./script/publish.sh"`
+- Enter the `develop` folder, run `npm install` to install the dependencies. Make sure you already build the dependency of aptos typescript sdk in `submodules`
+- Run `npm run publish` to publish the new package.
 
 ### Cooperate with `swap-ui`:
 

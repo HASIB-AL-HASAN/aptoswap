@@ -23,3 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.5] - 2022-09-03
 - Upgrade the dependency aptos core to branch `@e6e2f9f7`
+
+## [0.2.0] - 2022-09-18
+- Upgrade the dependency aptos core to newest devnet branch.
+- Split the test and the implementations.
+- Refactor and remove sending the pool account address each entrypoints in the smart contract. All the pools are now located in the package address.
