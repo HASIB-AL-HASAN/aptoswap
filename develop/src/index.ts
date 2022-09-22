@@ -123,7 +123,25 @@ const serializeTransactionTypeToPayload = (t: AptosTransactionType) => {
     return payload;
 }
 
+let _MOVE_CALL_GAS_SCHEDULE: Array<{key: string, val: string}> | undefined = undefined;
+let _MOVE_CALL_MIN_GAS_UNIT_PRICE: bigint | undefined = undefined;
+
 const executeMoveCall = async (client: AptosClient, account: AptosAccount, transaction: AptosTransactionType, exit: boolean = true, option?: AptosTransactionOptions) => {
+
+    if (_MOVE_CALL_GAS_SCHEDULE === undefined) {
+        _MOVE_CALL_GAS_SCHEDULE = ((await client.getAccountResource("0x1", "0x1::gas_schedule::GasScheduleV2")).data as any).entries;
+        for (const entry of (_MOVE_CALL_GAS_SCHEDULE) ?? []) {
+            if (entry.key === "txn.min_price_per_gas_unit") {
+                _MOVE_CALL_MIN_GAS_UNIT_PRICE = BigInt(entry.val);
+                console.log(`[INFO] Setting min_gas_price to ${_MOVE_CALL_MIN_GAS_UNIT_PRICE}`)
+            }
+        }
+    }
+
+    if (_MOVE_CALL_MIN_GAS_UNIT_PRICE === undefined) {
+        throw Error("Unable to get min_gas_price from network");
+    }
+
     console.log(`[INFO] Executing move call: ${transaction.function}<${transaction.type_arguments.join(" ")}>(...)`);
 
     const payload = serializeTransactionTypeToPayload(transaction);
@@ -133,7 +151,7 @@ const executeMoveCall = async (client: AptosClient, account: AptosAccount, trans
         payload,
         {
             maxGasAmount: option?.maxGasAmount ?? BigInt(1000),
-            gasUnitPrice: option?.gasUnitPrice ?? BigInt(1),
+            gasUnitPrice: option?.gasUnitPrice ?? _MOVE_CALL_MIN_GAS_UNIT_PRICE,
             expireTimestamp: BigInt(Math.floor(Date.now() / 1000) + (option?.expirationSecond ?? 60.0))
         }
     );
