@@ -349,7 +349,7 @@ const autoFund = async (account: AptosAccount, client: AptosClient, faucetClient
 }
 
 const actionPublish = async () => {
-    const HIPPO_TOKEN_PACKAGE_ADDR = "0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68";
+    const HIPPO_TOKEN_PACKAGE_ADDR = "0xdeae46f81671e76f444e2ce5a299d9e1ea06a8fa26e81dfd49aa7fa5a5a60e01";
 
     const [account, client, faucetClient, net] = await setup();
     const accountAddr = account.address();
