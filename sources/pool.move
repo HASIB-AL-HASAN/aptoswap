@@ -8,9 +8,20 @@ module Aptoswap::pool {
     use aptos_framework::managed_coin;
     use aptos_framework::coin;
     use aptos_framework::account;
+    use aptos_framework::timestamp;
+
+    use Aptoswap::utils::{ WeeklySmaU128, create_sma128, add_sma128};
 
     #[test_only]
     friend Aptoswap::pool_test;
+
+    const NUMBER_1E8: u128 = 100000000;
+
+    const EPoolTypeCpmm: u8 = 100;
+    const EPoolTypeStableSwap: u8 = 101;
+
+    const EFeeDirectionX: u8 = 200;
+    const EFeeDirectionY: u8 = 201;
 
     /// For when supplied Coin is zero.
     const EInvalidParameter: u64 = 13400;
@@ -45,6 +56,8 @@ module Aptoswap::pool {
     const BPS_SCALING: u128 = 10000;
     /// The maximum number of u64
     const U64_MAX: u128 = 18446744073709551615;
+    /// The interval between the snapshot in seconds
+    const SNAPSHOT_INTERVAL_SEC: u64 = 900;
 
     struct PoolCreateEvent has drop, store {
         index: u64
@@ -68,6 +81,11 @@ module Aptoswap::pool {
         y_amount: u64,
         // The lsp amount to added/removed
         lsp_amount: u64
+    }
+
+    struct SnapshotEvent has drop, store {
+        x: u64,
+        y: u64
     }
 
     struct SwapCap has key {
@@ -99,22 +117,52 @@ module Aptoswap::pool {
     struct Pool<phantom X, phantom Y> has key {
         /// The index of the pool
         index: u64,
+        /// The pool type
+        pool_type: u8,
         /// The balance of X token in the pool
         x: coin::Coin<X>,
         /// The balance of token in the pool
         y: coin::Coin<Y>,
         /// The current lsp supply value as u64
         lsp_supply: u64,
+
+        /// Affects how the admin fee and connect fee are extracted.
+        /// For a pool with quote coin X and base coin Y. 
+        /// - When `fee_direction` is EFeeDirectionX, we always
+        /// collect quote coin X for admin_fee & conY. 
+        /// - When `fee_direction` is EFeeDirectionY, we always 
+        /// collect base coin Y for admin_fee & connect_fee.
+        fee_direction: u8,
+
         /// Admin fee is denominated in basis points, in bps
         admin_fee: u64,
         /// Liqudity fee is denominated in basis points, in bps
         lp_fee: u64,
+        /// Fee for incentive
+        incentive_fee: u64,
+        /// Fee when connect to a token reward pool
+        connect_fee: u64,
+        /// Fee when user withdraw lsp token
+        withdraw_fee: u64,
+        
         /// Whether the pool is freezed for swapping and adding liquidity
         freeze: bool,
+
+        /// Number of x has been traded
+        total_trade_x: u128,
+        /// Number of y has been traded
+        total_trade_y: u128,
+        /// The term "ksp_e7" means (K / lsp * 10^8), record in u128 format
+        ksp_e8_sma: WeeklySmaU128,
+
         /// Swap token events
         swap_token_event: EventHandle<SwapTokenEvent>,
         /// Add liquidity events
         liquidity_event: EventHandle<LiquidityEvent>,
+        /// Snapshot events
+        snapshot_event: EventHandle<SnapshotEvent>,
+        /// Snapshot last capture time (in sec)
+        snapshot_last_capture_time: u64
     }
 
     // ============================================= Entry points =============================================
@@ -130,8 +178,12 @@ module Aptoswap::pool {
         mint_test_token_impl(owner, amount, recipient);
     }
 
-    public entry fun create_pool<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64) acquires SwapCap, Pool {
-        let _ = create_pool_impl<X, Y>(owner, admin_fee, lp_fee);
+    public entry fun create_pool<X, Y>(owner: &signer, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64) acquires SwapCap, Pool {
+        let _ = create_pool_impl<X, Y>(owner, fee_direction, admin_fee, lp_fee, incentive_fee, connect_fee, withdraw_fee);
+    }
+
+    public entry fun change_fee<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64) acquires Pool {
+        change_fee_impl<X, Y>(owner, admin_fee, lp_fee, incentive_fee, connect_fee);
     }
 
     public entry fun freeze_pool<X, Y>(owner: &signer) acquires Pool {
@@ -143,11 +195,11 @@ module Aptoswap::pool {
     }
 
     public entry fun swap_x_to_y<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
-        swap_x_to_y_impl<X, Y>(user, in_amount, min_out_amount);
+        swap_x_to_y_impl<X, Y>(user, in_amount, min_out_amount, true);
     }
 
     public entry fun swap_y_to_x<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
-        swap_y_to_x_impl<X, Y>(user, in_amount, min_out_amount);
+        swap_y_to_x_impl<X, Y>(user, in_amount, min_out_amount, true);
     }
 
     public entry fun add_liquidity<X, Y>(user: &signer, x_added: u64, y_added: u64) acquires Pool, LSPCapabilities {
@@ -161,11 +213,11 @@ module Aptoswap::pool {
 
     // ============================================= Public functions =============================================
     public fun swap_x_to_y_direct<X, Y>(in_coin: coin::Coin<X>): coin::Coin<Y> acquires Pool {
-        swap_x_to_y_direct_impl(in_coin)
+        swap_x_to_y_direct_impl(in_coin, true)
     }
 
     public fun swap_y_to_x_direct<X, Y>(in_coin: coin::Coin<Y>): coin::Coin<X> acquires Pool {
-        swap_y_to_x_direct_impl(in_coin)
+        swap_y_to_x_direct_impl(in_coin, true)
     }
     // ============================================= Public functions =============================================
 
@@ -241,13 +293,13 @@ module Aptoswap::pool {
         managed_coin::mint<Token>(owner, recipient, amount);
     }
 
-    public(friend) fun create_pool_impl<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64): address acquires SwapCap, Pool {
+    public(friend) fun create_pool_impl<X, Y>(owner: &signer, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64): address acquires SwapCap, Pool {
         let owner_addr = signer::address_of(owner);
 
         assert!(owner_addr == @Aptoswap, EPermissionDenied);
-        assert!(lp_fee >= 0, EWrongFee);
-        assert!(admin_fee >= 0, EWrongFee);
-        assert!(lp_fee + admin_fee < (BPS_SCALING as u64), EWrongFee);
+        assert!(lp_fee >= 0 && admin_fee >= 0 && incentive_fee >= 0 && connect_fee >= 0, EWrongFee);
+        assert!(lp_fee + admin_fee + incentive_fee + connect_fee < (BPS_SCALING as u64), EWrongFee);
+        assert!(withdraw_fee < (BPS_SCALING as u64), EWrongFee);
 
         let pool_account = owner;
         let pool_account_addr = owner_addr;
@@ -262,14 +314,31 @@ module Aptoswap::pool {
         // Create pool and move
         let pool = Pool<X, Y> {
             index: pool_index,
+            pool_type: EPoolTypeCpmm,
+
             x: coin::zero<X>(),
             y: coin::zero<Y>(),
             lsp_supply: 0,
+
+            fee_direction: fee_direction,
+
             admin_fee: admin_fee,
             lp_fee: lp_fee,
+            incentive_fee: incentive_fee,
+            connect_fee: connect_fee,
+            withdraw_fee: withdraw_fee,
+
             freeze: false,
+
+            total_trade_x: 0,
+            total_trade_y: 0,
+            ksp_e8_sma: create_sma128(),
+
             swap_token_event: account::new_event_handle<SwapTokenEvent>(pool_account),
             liquidity_event: account::new_event_handle<LiquidityEvent>(pool_account),
+            snapshot_event: account::new_event_handle<SnapshotEvent>(pool_account),
+
+            snapshot_last_capture_time: 0
         };
         move_to(pool_account, pool);
 
@@ -312,6 +381,23 @@ module Aptoswap::pool {
 
         pool_account_addr
     }
+    
+    public(friend) fun change_fee_impl<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64) acquires Pool {
+        let owner_addr = signer::address_of(owner);
+
+        assert!(owner_addr == @Aptoswap, EPermissionDenied);
+        assert!(lp_fee >= 0 && admin_fee >= 0 && incentive_fee >= 0 && connect_fee >= 0, EWrongFee);
+        assert!(lp_fee + admin_fee + incentive_fee + connect_fee < (BPS_SCALING as u64), EWrongFee);
+
+        let pool_account_addr = owner_addr;
+
+        // Check whether the pool we've created
+        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+        pool.admin_fee = admin_fee;
+        pool.lp_fee = lp_fee;
+        pool.incentive_fee = incentive_fee;
+        pool.connect_fee = connect_fee;
+    }
 
     public(friend) fun freeze_or_unfreeze_pool_impl<X, Y>(owner: &signer, freeze: bool) acquires Pool {
         let pool_account_addr = @Aptoswap;
@@ -321,7 +407,7 @@ module Aptoswap::pool {
         pool.freeze = freeze;
     }
 
-    public(friend) fun swap_x_to_y_direct_impl<X, Y>(in_coin: coin::Coin<X>): coin::Coin<Y> acquires Pool {
+    public(friend) fun swap_x_to_y_direct_impl<X, Y>(in_coin: coin::Coin<X>, post_process: bool): coin::Coin<Y> acquires Pool {
         let pool_account_addr = @Aptoswap;
 
         let in_amount = coin::value(&in_coin);
@@ -335,32 +421,36 @@ module Aptoswap::pool {
         let (x_reserve_amt, y_reserve_amt, _) = get_amounts(pool);
         assert!(x_reserve_amt > 0 && y_reserve_amt > 0, EReservesEmpty);
 
-        let ComputeShareStruct { 
-            remain: x_remain_amt,
-            admin: x_admin_amt,
-            lp: _
-        } = compute_share(pool, in_amount);
+        if (pool.fee_direction == EFeeDirectionX) {
+            collect_admin_fee(&mut in_coin, get_total_admin_fee(pool));
+        };
+
+        let fee_coin = collect_fee(&mut in_coin, get_total_lp_fee(pool));
 
         // Get the output amount
         let output_amount = compute_amount(
-            x_remain_amt,
+            coin::value(&in_coin),
             x_reserve_amt,
             y_reserve_amt,
         );
 
-        // 1. pool.x_admin = pool.x_admin + x_admin_amt;
-        coin::deposit(@Aptoswap, coin::extract(&mut in_coin, x_admin_amt));
-
         // 2. pool.x = pool.x + x_remain_amt + x_lp
         coin::merge(&mut pool.x, in_coin);
+        coin::merge(&mut pool.x, fee_coin);
 
         // 3. pool.y = pool.y - output_amount
         let out_coin = coin::extract(&mut pool.y, output_amount);
+        if (pool.fee_direction == EFeeDirectionY) {
+            collect_admin_fee(&mut out_coin, get_total_admin_fee(pool));
+        };
 
         let k_after = compute_k(pool);  
         assert!(k_after >= k_before, EComputationError);
 
-        // Emit event
+        // Accumulate total_trade_x
+        pool.total_trade_x = pool.total_trade_x + (in_amount as u128);
+
+        // Emit swap event
         event::emit_event(
             &mut pool.swap_token_event,
             SwapTokenEvent {
@@ -370,10 +460,31 @@ module Aptoswap::pool {
             }
         );
 
+        if (post_process) {
+            // Get time
+            let current_time = timestamp::now_seconds();
+
+            // Emit snapshot event
+            if (pool.snapshot_last_capture_time + SNAPSHOT_INTERVAL_SEC < current_time) {
+                pool.snapshot_last_capture_time = current_time;
+                event::emit_event(
+                    &mut pool.snapshot_event,
+                    SnapshotEvent {
+                        x: coin::value(&pool.x),
+                        y: coin::value(&pool.y)
+                    }
+                );
+            };
+
+            // Add ksp_e8 sma average
+            let ksp_e8: u128 = k_after * NUMBER_1E8 / (pool.lsp_supply as u128);
+            add_sma128(&mut pool.ksp_e8_sma, current_time, ksp_e8);
+        };
+
         out_coin
     }
 
-    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
+    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, post_process: bool) acquires Pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -386,14 +497,13 @@ module Aptoswap::pool {
         assert!(in_amount <= coin::balance<X>(user_addr), ENotEnoughBalance);
 
         let in_coin = coin::withdraw<X>(user, in_amount);
-        let out_coin = swap_x_to_y_direct_impl<X, Y>(in_coin);
+        let out_coin = swap_x_to_y_direct_impl<X, Y>(in_coin, post_process);
         assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
 
         coin::deposit(user_addr, out_coin);
     }
 
-    public(friend) fun swap_y_to_x_direct_impl<X, Y>(in_coin: coin::Coin<Y>): coin::Coin<X> acquires Pool {
-
+    public(friend) fun swap_y_to_x_direct_impl<X, Y>(in_coin: coin::Coin<Y>, post_process: bool): coin::Coin<X> acquires Pool {
         let pool_account_addr = @Aptoswap;
 
         let in_amount = coin::value(&in_coin);
@@ -407,32 +517,36 @@ module Aptoswap::pool {
         let (x_reserve_amt, y_reserve_amt, _) = get_amounts(pool);
         assert!(x_reserve_amt > 0 && y_reserve_amt > 0, EReservesEmpty);
 
-        let ComputeShareStruct { 
-            remain: y_remain_amt,
-            admin: y_admin_amt,
-            lp: _
-        } = compute_share(pool, in_amount);
+        if (pool.fee_direction == EFeeDirectionY) {
+            collect_admin_fee(&mut in_coin, get_total_admin_fee(pool));
+        };
+
+        let fee_coin = collect_fee(&mut in_coin, get_total_lp_fee(pool));
 
         // Get the output amount
         let output_amount = compute_amount(
-            y_remain_amt,
+            coin::value(&in_coin),
             y_reserve_amt,
             x_reserve_amt,
         );
 
-        // 1. pool.y_admin = pool.y_admin + y_admin_amt;
-        coin::deposit(@Aptoswap, coin::extract(&mut in_coin, y_admin_amt));
-
         // 2. pool.y = pool.y + y_remain_amt + y_lp;
         coin::merge(&mut pool.y, in_coin);
+        coin::merge(&mut pool.y, fee_coin);
 
         // 3. pool.x = pool.x - output_amount;
         let out_coin = coin::extract(&mut pool.x, output_amount);
+        if (pool.fee_direction == EFeeDirectionX) {
+            collect_admin_fee(&mut out_coin, get_total_admin_fee(pool));
+        };
 
         let k_after = compute_k(pool); 
         assert!(k_after >= k_before, EComputationError);
 
-        // Emit event
+        // Accumulate total_trade_y
+        pool.total_trade_y = pool.total_trade_y + (in_amount as u128);
+
+        // Emit swap event
         event::emit_event(
             &mut pool.swap_token_event,
             SwapTokenEvent {
@@ -442,10 +556,31 @@ module Aptoswap::pool {
             }
         );
 
+        if (post_process) {
+            // Get time
+            let current_time = timestamp::now_seconds();
+
+            // Emit snapshot event
+            if (pool.snapshot_last_capture_time + SNAPSHOT_INTERVAL_SEC < current_time) {
+                pool.snapshot_last_capture_time = current_time;
+                event::emit_event(
+                    &mut pool.snapshot_event,
+                    SnapshotEvent {
+                        x: coin::value(&pool.x),
+                        y: coin::value(&pool.y)
+                    }
+                );
+            };
+
+            // Add ksp_e8 sma average
+            let ksp_e8: u128 = k_after * NUMBER_1E8 / (pool.lsp_supply as u128);
+            add_sma128(&mut pool.ksp_e8_sma, current_time, ksp_e8);
+        };
+
         out_coin
     }
 
-    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
+    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, post_process: bool) acquires Pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -458,7 +593,7 @@ module Aptoswap::pool {
         assert!(in_amount <= coin::balance<Y>(user_addr), ENotEnoughBalance);
 
         let in_coin = coin::withdraw<Y>(user, in_amount);
-        let out_coin = swap_y_to_x_direct_impl<X, Y>(in_coin);
+        let out_coin = swap_y_to_x_direct_impl<X, Y>(in_coin, post_process);
         assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
 
         coin::deposit(user_addr, out_coin);
@@ -589,6 +724,10 @@ module Aptoswap::pool {
         // 2. pool.y = pool.y - y_removed;
         let coin_y_removed = coin::extract(&mut pool.y, y_removed);
 
+        // Deposit the withdraw fee to the admin
+        collect_admin_fee(&mut coin_x_removed, pool.withdraw_fee);
+        collect_admin_fee(&mut coin_y_removed, pool.withdraw_fee);
+
         pool.lsp_supply = pool.lsp_supply - lsp_amount;
         if (!coin::is_account_registered<X>(user_addr)) {
             managed_coin::register<X>(user);
@@ -661,9 +800,19 @@ module Aptoswap::pool {
         pool.admin_fee
     }
 
+    public(friend) fun get_pool_connect_fee<X, Y>(): u64 acquires Pool {
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
+        pool.connect_fee
+    }
+
     public(friend) fun get_pool_lp_fee<X, Y>(): u64 acquires Pool {
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.lp_fee
+    }
+
+    public(friend) fun get_pool_incentive_fee<X, Y>(): u64 acquires Pool {
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
+        pool.incentive_fee
     }
 
 
@@ -677,6 +826,18 @@ module Aptoswap::pool {
             coin::value(&pool.y), 
             pool.lsp_supply
         )
+    }
+
+    public(friend) fun get_admin_balance<X>(): u64 {
+        coin::balance<X>(@Aptoswap)
+    }
+
+    public(friend) fun get_total_lp_fee<X, Y>(pool: &Pool<X, Y>): u64 {
+        pool.lp_fee + pool.incentive_fee
+    }
+
+    public(friend) fun get_total_admin_fee<X, Y>(pool: &Pool<X, Y>): u64 {
+        pool.admin_fee + pool.connect_fee
     }
 
     /// Get current lsp supply in the pool
@@ -711,32 +872,6 @@ module Aptoswap::pool {
         (dy as u64)
     }
 
-    struct ComputeShareStruct {
-        remain: u64,
-        admin: u64,
-        lp: u64
-    }
-
-    public(friend) fun compute_share<T1,T2>(pool: &Pool<T1, T2>, x: u64): ComputeShareStruct {
-
-        let admin_fee = (pool.admin_fee as u128);
-        let lp_fee = (pool.lp_fee as u128);
-        let x = (x as u128);
-
-        // When taking fee, we use ceil operation instead of floor operation
-        let x_admin = ((x * admin_fee) + (BPS_SCALING - 1)) / BPS_SCALING;
-        let x_lp = ((x * lp_fee) + (BPS_SCALING - 1)) / BPS_SCALING;
-
-        // Sometimes x_admin + x_lp will larger than remain, we just throw error on computation
-        let x_remain = x - x_admin - x_lp;
-
-        ComputeShareStruct {
-            remain: (x_remain as u64),
-            admin: (x_admin as u64),
-            lp: (x_lp as u64),
-        }
-    }
-
     public(friend) fun compute_k<T1,T2>(pool: &Pool<T1, T2>): u128 {
         let (x_amt, y_amt, _) = get_amounts(pool);
         (x_amt as u128) * (y_amt as u128)
@@ -752,6 +887,19 @@ module Aptoswap::pool {
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         let lsp_supply_checked = *option::borrow(&coin::supply<LSP<X, Y>>());
         assert!(lsp_supply_checked == (pool.lsp_supply as u128), EComputationError);
+    }
+
+    public(friend) fun collect_fee<T>(coin: &mut coin::Coin<T>, fee: u64): coin::Coin<T> {
+        let x = (coin::value(coin) as u128);
+        let fee = (fee as u128);
+        
+        let x_fee_value = (((x * fee) / BPS_SCALING) as u64);
+        let x_fee = coin::extract(coin, x_fee_value);
+        x_fee
+    }
+
+    public(friend) fun collect_admin_fee<T>(coin: &mut coin::Coin<T>, fee: u64) {
+        coin::deposit(@Aptoswap, collect_fee(coin, fee));
     }
 
     // ============================================= Helper Function =============================================

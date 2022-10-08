@@ -433,7 +433,14 @@ const actionPublish = async () => {
             {
                 function: `${packageAddr}::pool::create_pool`,
                 type_arguments: [poolToken, "0x1::aptos_coin::AptosCoin"],
-                arguments: [4, 26]
+                arguments: [
+                    201, // Fee direction (base coin)
+                    3, // Admin fee: 0.03%
+                    26, // Lp fee: 0.26%
+                    0, // Incentive fee: 0%
+                    1, // Connect fee: 0.01%
+                    10, // Withdraw fee: 0.1% 
+                ]
             },
             false
         );
