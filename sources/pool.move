@@ -439,14 +439,12 @@ module Aptoswap::pool {
     public(friend) fun change_fee_impl<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64) acquires Pool {
         let owner_addr = signer::address_of(owner);
 
-        assert!(owner_addr == @Aptoswap, EPermissionDenied);
+        validate_admin(owner_addr);
         assert!(lp_fee >= 0 && admin_fee >= 0 && incentive_fee >= 0 && connect_fee >= 0, EWrongFee);
         assert!(lp_fee + admin_fee + incentive_fee + connect_fee < (BPS_SCALING as u64), EWrongFee);
 
-        let pool_account_addr = owner_addr;
-
         // Check whether the pool we've created
-        let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.admin_fee = admin_fee;
         pool.lp_fee = lp_fee;
         pool.incentive_fee = incentive_fee;
