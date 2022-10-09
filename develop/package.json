@@ -2,7 +2,8 @@
   "scripts": {
     "publish": "ts-node src/index.ts publish",
     "account": "ts-node src/index.ts account",
-    "new-account": "ts-node src/index.ts new-account"
+    "new-account": "ts-node src/index.ts new-account",
+    "create-pool": "ts-node src/index.ts create-pool"
   },
   "dependencies": {
     "@types/crypto-js": "^4.1.1",

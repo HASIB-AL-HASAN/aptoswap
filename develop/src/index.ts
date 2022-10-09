@@ -246,7 +246,7 @@ const publishModule = async (client: AptosClient, accountFrom: AptosAccount, mod
 }
 
 const newAccount = () => {
-    const password = prompt("Enter the password to renew a account: ").trim();
+    const password = prompt("Enter the email/password to renew a account[format: <email>/<password>]: ").trim();
 
     process.chdir(workspaceFolder); {
         if (fs.existsSync(".aptos")) {
@@ -274,8 +274,8 @@ const newAccount = () => {
 }
 
 const getAccount = () => {
-    const encrypted = "+mRO1QBmGxuAuPTfmziehPP3CCzilyD5HRyLC0FvWoBwzXk/npKwxz6T34WuFU+9j1r0Czkgup+NKymsOHHEmO/aQWNCmCRL8eLcXs8eWAjZm9mgDoZSPVgA/KDp/Ugf+cjjuzs9hVbhdsCEe9UuDbWqfTr+hE1vTechuVSgHbvixUKiVJvmiuY9YmEooyLt6rDodE6iu1KGZSowfwN6OSADGs7gX30/TEwlz+mxUYEg1/s5kGfrtfO+mBdJ6+DSRhbEsp+1opv9+beSR4uy7IkagnxaX12SQ2pEF3K+ZltSN6mVfriqV+mQuAyUegABHsW9LtaIRY3CECQIRivawsiHGI1jBivA2sfGbL/tiRCSOKjb3aO9dRQSuS5Q1Vv6+H4Ll7+4tAOI/dzEjJNj7gCMhRnekoX6yCKSsWhRO0Ufb4SHkUJJx7YErYTCj42ZlNJKmLvTjIA1mk8T2UwOMnYaSltbA5Uy8f5hI9lMSJxMszz7LA9QDqg8e62pXGQVvyfhEP5aYBbY9L9kX9Vlbw==";
-    const password = prompt("Enter the password to get the account: ");
+    const encrypted = "NXt1fScxw3c4U7MjwiBlMNUlo0AV+EZ7qF1F/b1q09jAPu/bRi3QGrx0LcDveOgMMiKQV5ChhrJeFx2Hvtd4WQx6wFRMGr6JQSQQl2ocdcMCyR8HRFZC0sIbJcucPxzFGIG9z1+bUlECprfa/UMyd0MMWcZ8lDsiUg/d4nQ2icMm75xpHXeFbKJXyld3MzHD46kG+5FCpjL+Goo1y6et976OGDERBgPhECsNyJ9pLvaA9BRObqwsEisszw4bZDvdk3cNpulZSwPDg9vMwyNkQJ/BmXjCWy9CrS1Yv4jxUJjqCbyBEtqypnIc11YK7Du6afKzcFzllFSrBDKzria9xL9n6ZhVJ+0Ji7rAFtN1j14sQJCZ9hKHbuxjylO5IG/4etYa9o2qxZ7AlppQmvLVUToYwUALy3u2PafwgDjgwQCvQqpuJuoXbKLjTDpRO3NYD01Pdy4OogXgrYt3LqHSYWBysoKh9V9r1IN0zh/FQ0jx4T/z9XZ697386rY/VeswEf+SBpIC9rDXzhkKB3essQ==";
+    const password = prompt("Enter the email/password to get a account[format: <email>/<password>]: ").trim();
     const decrypted = Cipher.decrypt(encrypted, password);
 
     console.log(`[INFO] Use the following config.yaml:\n=======================================\n${decrypted}\n`);
@@ -324,7 +324,9 @@ const getMoveMetadata = () => {
     return new HexString(buffer.toString("hex")).toUint8Array();
 }
 
-const setup = async () => {
+type SetupType = [AptosAccount, AptosClient, FaucetClient | null, AptosNetwork];
+
+const setup: () => Promise<SetupType> = async () => {
     // Get the network
 
     let selectNetworkInput = prompt("Select your network [devnet|localhost|testnet] (default: localhost): ", "localhost").trim();
@@ -370,9 +372,87 @@ const autoFund = async (account: AptosAccount, client: AptosClient, faucetClient
     }
 }
 
-const actionPublish = async () => {
+const actionCreatePool = async () => {
     const HIPPO_TOKEN_PACKAGE_ADDR = "0xdeae46f81671e76f444e2ce5a299d9e1ea06a8fa26e81dfd49aa7fa5a5a60e01";
+    const CELER_TOKEN_PACKAGE_ADDR = "0xbc954a7df993344c9fec9aaccdf96673a897025119fc38a8e0f637598496b47a";
 
+    const [account, client, faucetClient, net] = await setup();
+    const accountAddr = account.address();
+    const packageAddr = accountAddr;
+    await autoFund(account, client, faucetClient, 0.8);
+
+    const currentBalance = await getBalance(client, accountAddr);
+    const currentBalanceShow = Number(currentBalance) / (10 ** 8);
+    console.log(`[INFO] Current balance: ${currentBalance}(${currentBalanceShow})`);
+
+    const hippo = {
+        fee: {
+            adminFee: 3,
+            lpFee: 26,
+            incentiveFee: 0,
+            connectFee: 1,
+            withdrawFee: 10,
+        },
+        tokens: [
+            { coin: [`${packageAddr}::pool::TestToken`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${packageAddr}::pool::Token`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBNB`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetDAI`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetETH`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetSOL`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDT`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+        ]
+    }
+
+    const celer = {
+        fee: {
+            adminFee: 0,
+            lpFee: 27,
+            incentiveFee: 3,
+            connectFee: 0,
+            withdrawFee: 10,
+        },
+        tokens: [
+            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_dai_coin::TestMintCoin`],  direction: "Y" },
+            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_usdc_coin::TestMintCoin`], direction: "Y" },
+            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_usdt_coin::TestMintCoin`], direction: "Y" },
+            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_wbtc_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_weth_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y"  }
+        ]
+    }
+    
+
+    // Create pool
+    for (const poolConfig of [hippo, celer]) {
+        const fee = poolConfig.fee;
+        const tokens = poolConfig.tokens;
+        for (const tk of tokens) {
+            const coin = tk.coin;
+            const direction = tk.direction;
+            await executeMoveCall(
+                client, account,
+                {
+                    function: `${packageAddr}::pool::create_pool`,
+                    type_arguments: [tk.coin[0], tk.coin[1]],
+                    arguments: [
+                        ["u8", tk.direction.toLowerCase() === "x" ? 200 : 201],
+                        fee.adminFee,
+                        fee.lpFee,
+                        fee.incentiveFee,
+                        fee.connectFee,
+                        fee.withdrawFee
+                    ]
+                },
+                false
+            );
+        }
+    }
+
+}
+
+const actionPublish = async () => {
     const [account, client, faucetClient, net] = await setup();
     const accountAddr = account.address();
     const packageAddr = accountAddr;
@@ -411,18 +491,6 @@ const actionPublish = async () => {
         console.log(`[DONE] Publish module, tx: ${txHashPublish}`);
     }
 
-    const poolTokens = [
-        `${packageAddr}::pool::TestToken`,
-        `${packageAddr}::pool::Token`,
-        `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBNB`,
-        `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`,
-        `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetDAI`,
-        `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetETH`,
-        `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetSOL`,
-        `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDC`,
-        `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDT`
-    ]
-
     // Initialize
     await executeMoveCall(
         client, account,
@@ -433,40 +501,6 @@ const actionPublish = async () => {
         },
         true
     );
-
-    // Mint token
-    await executeMoveCall(
-        client, account,
-        {
-            function: `${packageAddr}::pool::mint_token`,
-            type_arguments: [],
-            arguments: [
-                BigInt(100 * (10 ** 8)),
-                ["address", accountAddr.toString()]
-            ]
-        },
-        false
-    );
-
-    // Create pool
-    for (const poolToken of poolTokens) {
-        await executeMoveCall(
-            client, account,
-            {
-                function: `${packageAddr}::pool::create_pool`,
-                type_arguments: [poolToken, "0x1::aptos_coin::AptosCoin"],
-                arguments: [
-                    ["u8", 201], // Fee direction (base coin)
-                    3, // Admin fee: 0.03%
-                    26, // Lp fee: 0.26%
-                    0, // Incentive fee: 0%
-                    1, // Connect fee: 0.01%
-                    10, // Withdraw fee: 0.1% 
-                ]
-            },
-            false
-        );
-    }
 }
 
 const actionNewAccount = async () => { await newAccount(); }
@@ -477,7 +511,8 @@ const executeAction = async () => {
     const commands: Map<string, () => Promise<void>> = new Map([
         ["publish", actionPublish],
         ["new-account", actionNewAccount],
-        ["account", actionGetAccount]
+        ["account", actionGetAccount],
+        ["create-pool", actionCreatePool]
     ]);
 
     if (process.argv.length < 3) {
