@@ -2,7 +2,7 @@ import { AptosAccount, BCS, AptosClient, TxnBuilderTypes, HexString, MaybeHexStr
 import yaml from "js-yaml";
 import path from "path"
 import * as crypto from "crypto-js";
-import fs, { readFileSync } from 'fs'
+import fs from 'fs'
 import { execSync } from "child_process";
 const prompt_ = require('prompt-sync')();
 
