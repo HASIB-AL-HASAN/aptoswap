@@ -23,21 +23,21 @@ module Aptoswap::utils {
         sma.current_time = time;
 
         if (sma.start_time == 0) {
-            sma.start_time = time - (TIME_INTERVAL_DAY * 6);
+            sma.start_time = time - (TIME_INTERVAL_DAY * 1);
             sma.a0 = value;
-            sma.a1 = value;
-            sma.a2 = value;
-            sma.a3 = value;
-            sma.a4 = value;
-            sma.a5 = value;
+            sma.a1 = 0;
+            sma.a2 = 0;
+            sma.a3 = 0;
+            sma.a4 = 0;
+            sma.a5 = 0;
             sma.a6 = 0;
 
             sma.c0 = 1;
-            sma.c1 = 1;
-            sma.c2 = 1;
-            sma.c3 = 1;
-            sma.c4 = 1;
-            sma.c5 = 1;
+            sma.c1 = 0;
+            sma.c2 = 0;
+            sma.c3 = 0;
+            sma.c4 = 0;
+            sma.c5 = 0;
             sma.c6 = 0;
         } else {
             while (sma.start_time + (TIME_INTERVAL_DAY * 7) <= time) {

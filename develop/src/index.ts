@@ -126,8 +126,7 @@ const serializeTransactionTypeToPayload = (t: AptosTransactionType) => {
 let _MOVE_CALL_GAS_SCHEDULE: Array<{key: string, val: string}> | undefined = undefined;
 let _MOVE_CALL_MIN_GAS_UNIT_PRICE: bigint | undefined = undefined;
 
-const executeMoveCall = async (client: AptosClient, account: AptosAccount, transaction: AptosTransactionType, exit: boolean = true, option?: AptosTransactionOptions) => {
-
+const prepareMoveCall = async (client: AptosClient) => {
     if (_MOVE_CALL_GAS_SCHEDULE === undefined) {
         _MOVE_CALL_GAS_SCHEDULE = ((await client.getAccountResource("0x1", "0x1::gas_schedule::GasScheduleV2")).data as any).entries;
         for (const entry of (_MOVE_CALL_GAS_SCHEDULE) ?? []) {
@@ -141,6 +140,11 @@ const executeMoveCall = async (client: AptosClient, account: AptosAccount, trans
     if (_MOVE_CALL_MIN_GAS_UNIT_PRICE === undefined) {
         throw Error("Unable to get min_gas_price from network");
     }
+}
+
+const executeMoveCall = async (client: AptosClient, account: AptosAccount, transaction: AptosTransactionType, exit: boolean = true, option?: AptosTransactionOptions) => {
+
+    await prepareMoveCall(client);
 
     console.log(`[INFO] Executing move call: ${transaction.function}<${transaction.type_arguments.join(" ")}>(...)`);
 
@@ -225,10 +229,17 @@ const getBalance = async (client: AptosClient, accountAddress: MaybeHexString) =
     }
 }
 
-const publishModule = async (client: AptosClient, accountFrom: AptosAccount, moduleHexes: Uint8Array[], metadata: Uint8Array) => {
+const publishModule = async (client: AptosClient, accountFrom: AptosAccount, moduleHexes: Uint8Array[], metadata: Uint8Array, option?: AptosTransactionOptions) => {
+    await prepareMoveCall(client);
+
     let txnHash = await client.publishPackage(
         accountFrom, metadata, 
-        moduleHexes.map(hex => new TxnBuilderTypes.Module(hex))
+        moduleHexes.map(hex => new TxnBuilderTypes.Module(hex)),
+        {
+            maxGasAmount: option?.maxGasAmount ?? BigInt(200000),
+            gasUnitPrice: option?.gasUnitPrice ?? _MOVE_CALL_MIN_GAS_UNIT_PRICE,
+            expireTimestamp: BigInt(Math.floor(Date.now() / 1000) + (option?.expirationSecond ?? 60.0))
+        }
     );
     await client.waitForTransaction(txnHash, { checkSuccess: true });
     return txnHash;
@@ -263,7 +274,7 @@ const newAccount = () => {
 }
 
 const getAccount = () => {
-    const encrypted = "+mRO1QBmGxuAuPTfmziehPP3CCzilyD5HRyLC0FvWoCkOSiZYMMhsv7ckK90A5ersmE8YAZR2Y5tIVsDFejM1Sj+nIrGT9xpo/aUo7aBcCj9h7xLAHTxjI+N6KVnLTE/YkQQqHsVHhY3cDNeLDbl7bWqfTr+hE1vTechuVSgHbv+4dfyLueigVJJgRHEfgOxAnhsbmxRmufxHAnWZhmamA5lnmqycpTXt4l8ylVNS0eMp2XGUfVv3st3jDNXBdUVuqwU4TfRW62aEqBxApbEekUEPf2lpEjKCGJ+HVGjB7racwv3SI4a8Rt39S8/JnukvhDOtPS2Q4ecougyxmtPQS5vCZzwO2tXyAGS6aoOAXNASjBnpaDNkdySyBgp/L2Y+H4Ll7+4tAOI/dzEjJNj7gCMhRnekoX6yCKSsWhRO0Ufb4SHkUJJx7YErYTCj42ZlNJKmLvTjIA1mk8T2UwOMnYaSltbA5Uy8f5hI9lMSJxMszz7LA9QDqg8e62pXGQVvyfhEP5aYBbY9L9kX9Vlbw==";
+    const encrypted = "+mRO1QBmGxuAuPTfmziehPP3CCzilyD5HRyLC0FvWoBwzXk/npKwxz6T34WuFU+9j1r0Czkgup+NKymsOHHEmO/aQWNCmCRL8eLcXs8eWAjZm9mgDoZSPVgA/KDp/Ugf+cjjuzs9hVbhdsCEe9UuDbWqfTr+hE1vTechuVSgHbvixUKiVJvmiuY9YmEooyLt6rDodE6iu1KGZSowfwN6OSADGs7gX30/TEwlz+mxUYEg1/s5kGfrtfO+mBdJ6+DSRhbEsp+1opv9+beSR4uy7IkagnxaX12SQ2pEF3K+ZltSN6mVfriqV+mQuAyUegABHsW9LtaIRY3CECQIRivawsiHGI1jBivA2sfGbL/tiRCSOKjb3aO9dRQSuS5Q1Vv6+H4Ll7+4tAOI/dzEjJNj7gCMhRnekoX6yCKSsWhRO0Ufb4SHkUJJx7YErYTCj42ZlNJKmLvTjIA1mk8T2UwOMnYaSltbA5Uy8f5hI9lMSJxMszz7LA9QDqg8e62pXGQVvyfhEP5aYBbY9L9kX9Vlbw==";
     const password = prompt("Enter the password to get the account: ");
     const decrypted = Cipher.decrypt(encrypted, password);
 
@@ -365,7 +376,7 @@ const actionPublish = async () => {
     const [account, client, faucetClient, net] = await setup();
     const accountAddr = account.address();
     const packageAddr = accountAddr;
-    await autoFund(account, client, faucetClient, 0.07);
+    await autoFund(account, client, faucetClient, 0.8);
 
     const currentBalance = await getBalance(client, accountAddr);
     const currentBalanceShow = Number(currentBalance) / (10 ** 8);

@@ -61,6 +61,8 @@ module Aptoswap::pool {
     const SNAPSHOT_INTERVAL_SEC: u64 = 900;
     /// The interval between the refreshing the total trade 24h
     const TOTAL_TRADE_24H_INTERVAL_SEC: u64 = 86400;
+    /// The interval between captuing the bank amount
+    const BANK_AMOUNT_SNAPSHOT_INTERVAL_SEC: u64 = 3600 * 6;
 
     struct PoolCreateEvent has drop, store {
         index: u64
@@ -91,6 +93,10 @@ module Aptoswap::pool {
         y: u64
     }
 
+    struct CoinAmountEvent has drop, store {
+        amount: u64
+    }
+
     struct SwapCap has key {
         /// Points to the next pool id that should be used
         pool_create_counter: u64,
@@ -115,6 +121,12 @@ module Aptoswap::pool {
         mint: coin::MintCapability<LSP<X, Y>>,
         freeze: coin::FreezeCapability<LSP<X, Y>>,
         burn: coin::BurnCapability<LSP<X, Y>>,
+    }
+
+    struct Bank<phantom X> has key {
+        coin: coin::Coin<X>,
+        coin_amount_event: EventHandle<CoinAmountEvent>,
+        coin_amount_event_last_time: u64
     }
 
     struct Pool<phantom X, phantom Y> has key {
@@ -181,6 +193,10 @@ module Aptoswap::pool {
         initialize_impl(owner, demicals);
     }
 
+    public entry fun withdraw_bank<X>(user: &signer, amount: u64) acquires Bank {
+        withdraw_bank_impl<X>(user, amount);
+    }
+
     public entry fun mint_token(owner: &signer, amount: u64, recipient: address) {
         mint_token_impl(owner, amount, recipient);
     }
@@ -206,11 +222,11 @@ module Aptoswap::pool {
     }
 
     public entry fun swap_x_to_y<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
-        swap_x_to_y_impl<X, Y>(user, in_amount, min_out_amount, true);
+        swap_x_to_y_impl<X, Y>(user, in_amount, min_out_amount, timestamp::now_seconds());
     }
 
     public entry fun swap_y_to_x<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64) acquires Pool {
-        swap_y_to_x_impl<X, Y>(user, in_amount, min_out_amount, true);
+        swap_y_to_x_impl<X, Y>(user, in_amount, min_out_amount, timestamp::now_seconds());
     }
 
     public entry fun add_liquidity<X, Y>(user: &signer, x_added: u64, y_added: u64) acquires Pool, LSPCapabilities {
@@ -224,11 +240,11 @@ module Aptoswap::pool {
 
     // ============================================= Public functions =============================================
     public fun swap_x_to_y_direct<X, Y>(in_coin: coin::Coin<X>): coin::Coin<Y> acquires Pool {
-        swap_x_to_y_direct_impl(in_coin, true)
+        swap_x_to_y_direct_impl(in_coin,  timestamp::now_seconds())
     }
 
     public fun swap_y_to_x_direct<X, Y>(in_coin: coin::Coin<Y>): coin::Coin<X> acquires Pool {
-        swap_y_to_x_direct_impl(in_coin, true)
+        swap_y_to_x_direct_impl(in_coin,  timestamp::now_seconds())
     }
     // ============================================= Public functions =============================================
 
@@ -274,6 +290,21 @@ module Aptoswap::pool {
         move_to(owner, aptos_cap);
     }
 
+    public(friend) fun withdraw_bank_impl<X>(user: &signer, amount: u64) acquires Bank {
+        let bank = borrow_global_mut<Bank<X>>(@Aptoswap);
+        let user_addr = signer::address_of(user);
+        validate_admin(user_addr);
+        assert!(amount > 0, EInvalidParameter);
+        assert!(amount <= coin::value(&bank.coin), ENotEnoughBalance);
+
+        let c = coin::extract(&mut bank.coin, amount);
+
+        if (!coin::is_account_registered<X>(user_addr)) {
+            managed_coin::register<X>(user);
+        };
+        coin::deposit(user_addr, c);
+    }
+
     public(friend) fun mint_test_token_impl(owner: &signer, amount: u64, recipient: address) acquires SwapCap, TestTokenCapabilities {
         assert!(amount > 0, EInvalidParameter);
 
@@ -293,9 +324,9 @@ module Aptoswap::pool {
     }
 
     public(friend) fun mint_token_impl(owner: &signer, amount: u64, recipient: address) {
-        assert!(amount > 0, EInvalidParameter);
         let owner_addr = signer::address_of(owner);
-        assert!(exists<SwapCap>(owner_addr), EPermissionDenied);
+        validate_admin(owner_addr);
+        assert!(amount > 0, EInvalidParameter);
 
         // if (!coin::is_account_registered<Token>(owner_addr) && (owner_addr == recipient)) {
         //     managed_coin::register<Token>(owner);
@@ -365,6 +396,13 @@ module Aptoswap::pool {
         if (!coin::is_account_registered<Y>(pool_account_addr)) {
             managed_coin::register<Y>(pool_account);
         };
+        if (!exists<Bank<X>>(pool_account_addr)) {
+            move_to(pool_account, empty_bank<X>(pool_account));
+        };
+        if (!exists<Bank<Y>>(pool_account_addr)) {
+            move_to(pool_account, empty_bank<Y>(pool_account));
+        };
+
 
         // Initialize the LSP<X, Y> token and transfer the ownership to pool account 
         let (burn_cap, freeze_cap, mint_cap) = coin::initialize<LSP<X, Y>>(
@@ -418,12 +456,12 @@ module Aptoswap::pool {
     public(friend) fun freeze_or_unfreeze_pool_impl<X, Y>(owner: &signer, freeze: bool) acquires Pool {
         let pool_account_addr = @Aptoswap;
         let owner_addr = signer::address_of(owner);
-        assert!(exists<SwapCap>(owner_addr), EPermissionDenied);
+        validate_admin(owner_addr);
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         pool.freeze = freeze;
     }
 
-    public(friend) fun swap_x_to_y_direct_impl<X, Y>(in_coin: coin::Coin<X>, post_process: bool): coin::Coin<Y> acquires Pool {
+    public(friend) fun swap_x_to_y_direct_impl<X, Y>(in_coin: coin::Coin<X>, current_time: u64): coin::Coin<Y> acquires Pool {
         let pool_account_addr = @Aptoswap;
 
         let in_amount = coin::value(&in_coin);
@@ -477,10 +515,7 @@ module Aptoswap::pool {
         pool.total_trade_x = pool.total_trade_x + (in_amount as u128);
         pool.total_trade_y = pool.total_trade_y + (output_amount as u128);
 
-        if (post_process) {
-            // Get time
-            let current_time = timestamp::now_seconds();
-
+        if (current_time > 0) {
             if (pool.total_trade_24h_last_capture_time + TOTAL_TRADE_24H_INTERVAL_SEC < current_time) {
                 pool.total_trade_24h_last_capture_time = current_time;
                 pool.total_trade_x_24h = 0;
@@ -510,7 +545,7 @@ module Aptoswap::pool {
         out_coin
     }
 
-    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, post_process: bool) acquires Pool {
+    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, current_time: u64) acquires Pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -523,13 +558,13 @@ module Aptoswap::pool {
         assert!(in_amount <= coin::balance<X>(user_addr), ENotEnoughBalance);
 
         let in_coin = coin::withdraw<X>(user, in_amount);
-        let out_coin = swap_x_to_y_direct_impl<X, Y>(in_coin, post_process);
+        let out_coin = swap_x_to_y_direct_impl<X, Y>(in_coin, current_time);
         assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
 
         coin::deposit(user_addr, out_coin);
     }
 
-    public(friend) fun swap_y_to_x_direct_impl<X, Y>(in_coin: coin::Coin<Y>, post_process: bool): coin::Coin<X> acquires Pool {
+    public(friend) fun swap_y_to_x_direct_impl<X, Y>(in_coin: coin::Coin<Y>, current_time: u64): coin::Coin<X> acquires Pool {
         let pool_account_addr = @Aptoswap;
 
         let in_amount = coin::value(&in_coin);
@@ -583,10 +618,7 @@ module Aptoswap::pool {
         pool.total_trade_y = pool.total_trade_y + (in_amount as u128);
         pool.total_trade_x = pool.total_trade_x + (output_amount as u128);
 
-        if (post_process) {
-            // Get time
-            let current_time = timestamp::now_seconds();
-
+        if (current_time > 0) {
             if (pool.total_trade_24h_last_capture_time + TOTAL_TRADE_24H_INTERVAL_SEC < current_time) {
                 pool.total_trade_24h_last_capture_time = current_time;
                 pool.total_trade_x_24h = 0;
@@ -616,7 +648,7 @@ module Aptoswap::pool {
         out_coin
     }
 
-    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, post_process: bool) acquires Pool {
+    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, current_time: u64) acquires Pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -629,7 +661,7 @@ module Aptoswap::pool {
         assert!(in_amount <= coin::balance<Y>(user_addr), ENotEnoughBalance);
 
         let in_coin = coin::withdraw<Y>(user, in_amount);
-        let out_coin = swap_y_to_x_direct_impl<X, Y>(in_coin, post_process);
+        let out_coin = swap_y_to_x_direct_impl<X, Y>(in_coin, current_time);
         assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
 
         coin::deposit(user_addr, out_coin);
@@ -806,6 +838,33 @@ module Aptoswap::pool {
     // ============================================= Implementations =============================================
 
     // ============================================= Helper Function =============================================
+
+    fun validate_admin(user_addr: address) {
+        assert!(exists<SwapCap>(user_addr), EPermissionDenied);
+    }
+
+    fun empty_bank<X>(owner: &signer): Bank<X> {
+        Bank<X> {
+            coin: coin::zero<X>(),
+            coin_amount_event: account::new_event_handle<CoinAmountEvent>(owner),
+            coin_amount_event_last_time: 0
+        }
+    }
+
+    fun deposit_to_bank<X>(bank: &mut Bank<X>, c: coin::Coin<X>, current_time: u64) {
+        // Merge coin
+        coin::merge(&mut bank.coin, c);
+
+        // Capture the event if needed
+        if (current_time > 0) {
+            if (bank.coin_amount_event_last_time + BANK_AMOUNT_SNAPSHOT_INTERVAL_SEC < current_time) {
+                bank.coin_amount_event_last_time = current_time;
+                event::emit_event(&mut bank.coin_amount_event, CoinAmountEvent { 
+                    amount: coin::value(&bank.coin)
+                });
+            }
+        }
+    }
 
     public(friend) fun is_swap_cap_exists(addr: address): bool {
         exists<SwapCap>(addr)

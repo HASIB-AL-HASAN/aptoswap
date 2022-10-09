@@ -525,7 +525,7 @@ module Aptoswap::pool_test {
         let old_balance_tx = coin::balance<TX>(admin_addr);
         let old_balance_ty = coin::balance<TY>(admin_addr);
 
-        swap_x_to_y_impl<TX, TY>(guy, 5000, 0, false);
+        swap_x_to_y_impl<TX, TY>(guy, 5000, 0, 0);
 
         // Check pool balance and guy balance
         validate_lsp_from_address<TX, TY>();
@@ -586,7 +586,7 @@ module Aptoswap::pool_test {
         let old_balance_tx = coin::balance<TX>(admin_addr);
         let old_balance_ty = coin::balance<TY>(admin_addr);
 
-        swap_y_to_x_impl<TX, TY>(guy, 5000000, 0, false);
+        swap_y_to_x_impl<TX, TY>(guy, 5000000, 0, 0);
 
         validate_lsp_from_address<TX, TY>();
         assert!(coin::balance<TX>(guy_addr) == 4960, 0);
@@ -846,12 +846,12 @@ module Aptoswap::pool_test {
             if (info.x_added > 0) 
             {
                 managed_coin::mint<TX>(admin, guy_addr, info.x_added);
-                swap_x_to_y_impl<TX, TY>(guy, info.x_added, 0, false);
+                swap_x_to_y_impl<TX, TY>(guy, info.x_added, 0, 0);
             }
             else if (info.y_added > 0) 
             {
                 managed_coin::mint<TY>(admin, guy_addr, info.y_added);
-                swap_y_to_x_impl<TX, TY>(guy, info.y_added, 0, false);
+                swap_y_to_x_impl<TX, TY>(guy, info.y_added, 0, 0);
             };
 
             // Check the data matches the simulate data
