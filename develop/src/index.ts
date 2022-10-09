@@ -225,11 +225,11 @@ const getBalance = async (client: AptosClient, accountAddress: MaybeHexString) =
     }
 }
 
-const publishModule = async (client: AptosClient, accountFrom: AptosAccount, moduleHex: Uint8Array, metadata: Uint8Array) => {
+const publishModule = async (client: AptosClient, accountFrom: AptosAccount, moduleHexes: Uint8Array[], metadata: Uint8Array) => {
     let txnHash = await client.publishPackage(
-        accountFrom, metadata, [
-        new TxnBuilderTypes.Module(moduleHex),
-    ]);
+        accountFrom, metadata, 
+        moduleHexes.map(hex => new TxnBuilderTypes.Module(hex))
+    );
     await client.waitForTransaction(txnHash, { checkSuccess: true });
     return txnHash;
 }
@@ -291,9 +291,20 @@ const getAccount = () => {
 }
 
 const getMoveCode = () => {
-    const modulePath = path.join(workspaceFolder, "build", "Aptoswap", "bytecode_modules", "pool.mv");
-    const buffer = fs.readFileSync(modulePath);
-    return new HexString(buffer.toString("hex")).toUint8Array();
+    const moduleFilenames = [
+        'utils.mv',
+        'pool.mv',
+    ];
+
+    const buffers = moduleFilenames.map(
+        moduleFilename => {
+            const modulePath = path.join(workspaceFolder, "build", "Aptoswap", "bytecode_modules", moduleFilename);
+            const buffer = fs.readFileSync(modulePath);
+            return new HexString(buffer.toString("hex")).toUint8Array();
+        }
+    )
+
+    return buffers;
 }
 
 const getMoveMetadata = () => {
@@ -434,7 +445,7 @@ const actionPublish = async () => {
                 function: `${packageAddr}::pool::create_pool`,
                 type_arguments: [poolToken, "0x1::aptos_coin::AptosCoin"],
                 arguments: [
-                    201, // Fee direction (base coin)
+                    ["u8", 201], // Fee direction (base coin)
                     3, // Admin fee: 0.03%
                     26, // Lp fee: 0.26%
                     0, // Incentive fee: 0%
