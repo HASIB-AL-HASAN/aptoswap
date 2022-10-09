@@ -56,8 +56,11 @@ module Aptoswap::pool {
     const BPS_SCALING: u128 = 10000;
     /// The maximum number of u64
     const U64_MAX: u128 = 18446744073709551615;
+
     /// The interval between the snapshot in seconds
     const SNAPSHOT_INTERVAL_SEC: u64 = 900;
+    /// The interval between the refreshing the total trade 24h
+    const TOTAL_TRADE_24H_INTERVAL_SEC: u64 = 86400;
 
     struct PoolCreateEvent has drop, store {
         index: u64
@@ -152,6 +155,14 @@ module Aptoswap::pool {
         total_trade_x: u128,
         /// Number of y has been traded
         total_trade_y: u128,
+
+        /// Total trade 24h last capture time
+        total_trade_24h_last_capture_time: u64,
+        /// Number of x has been traded (in one day)
+        total_trade_x_24h: u128,
+        /// Number of y has been traded (in one day)
+        total_trade_y_24h: u128,
+
         /// The term "ksp_e7" means (K / lsp * 10^8), record in u128 format
         ksp_e8_sma: WeeklySmaU128,
 
@@ -332,6 +343,11 @@ module Aptoswap::pool {
 
             total_trade_x: 0,
             total_trade_y: 0,
+
+            total_trade_24h_last_capture_time: 0,
+            total_trade_x_24h: 0,
+            total_trade_y_24h: 0,
+
             ksp_e8_sma: create_sma128(),
 
             swap_token_event: account::new_event_handle<SwapTokenEvent>(pool_account),
@@ -447,9 +463,6 @@ module Aptoswap::pool {
         let k_after = compute_k(pool);  
         assert!(k_after >= k_before, EComputationError);
 
-        // Accumulate total_trade_x
-        pool.total_trade_x = pool.total_trade_x + (in_amount as u128);
-
         // Emit swap event
         event::emit_event(
             &mut pool.swap_token_event,
@@ -460,9 +473,22 @@ module Aptoswap::pool {
             }
         );
 
+        // Accumulate total_trade
+        pool.total_trade_x = pool.total_trade_x + (in_amount as u128);
+        pool.total_trade_y = pool.total_trade_y + (output_amount as u128);
+
         if (post_process) {
             // Get time
             let current_time = timestamp::now_seconds();
+
+            if (pool.total_trade_24h_last_capture_time + TOTAL_TRADE_24H_INTERVAL_SEC < current_time) {
+                pool.total_trade_24h_last_capture_time = current_time;
+                pool.total_trade_x_24h = 0;
+                pool.total_trade_y_24h = 0;
+            };
+
+            pool.total_trade_x_24h = pool.total_trade_x_24h + (in_amount as u128);
+            pool.total_trade_y_24h = pool.total_trade_y_24h + (output_amount as u128);
 
             // Emit snapshot event
             if (pool.snapshot_last_capture_time + SNAPSHOT_INTERVAL_SEC < current_time) {
@@ -543,9 +569,6 @@ module Aptoswap::pool {
         let k_after = compute_k(pool); 
         assert!(k_after >= k_before, EComputationError);
 
-        // Accumulate total_trade_y
-        pool.total_trade_y = pool.total_trade_y + (in_amount as u128);
-
         // Emit swap event
         event::emit_event(
             &mut pool.swap_token_event,
@@ -556,9 +579,22 @@ module Aptoswap::pool {
             }
         );
 
+        // Accumulate total_trade
+        pool.total_trade_y = pool.total_trade_y + (in_amount as u128);
+        pool.total_trade_x = pool.total_trade_x + (output_amount as u128);
+
         if (post_process) {
             // Get time
             let current_time = timestamp::now_seconds();
+
+            if (pool.total_trade_24h_last_capture_time + TOTAL_TRADE_24H_INTERVAL_SEC < current_time) {
+                pool.total_trade_24h_last_capture_time = current_time;
+                pool.total_trade_x_24h = 0;
+                pool.total_trade_y_24h = 0;
+            };
+
+            pool.total_trade_y_24h = pool.total_trade_y_24h + (in_amount as u128);
+            pool.total_trade_x_24h = pool.total_trade_x_24h + (output_amount as u128);
 
             // Emit snapshot event
             if (pool.snapshot_last_capture_time + SNAPSHOT_INTERVAL_SEC < current_time) {
