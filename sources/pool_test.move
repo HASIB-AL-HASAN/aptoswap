@@ -430,7 +430,7 @@ module Aptoswap::pool_test {
         let guy_addr = signer::address_of(guy);
         account::create_account_for_test(admin_addr);
         account::create_account_for_test(guy_addr);
-        let _ = create_pool_impl<TZ, TW>(guy, 201, 3, 25, 1, 2, 10);
+        let _ = create_pool_impl<TZ, TW>(guy, 100, 201, 3, 25, 1, 2, 10);
     }
 
     #[test_only]
@@ -757,7 +757,7 @@ module Aptoswap::pool_test {
         assert!(coin::is_coin_initialized<TY>(), 2);
 
         // Creat the pool
-        let pool_account_addr = create_pool_impl<TX, TY>(admin, fee_direction, 3, 25, 1, 2, 10);
+        let pool_account_addr = create_pool_impl<TX, TY>(admin, 100, fee_direction, 3, 25, 1, 2, 10);
         assert!(coin::is_coin_initialized<LSP<TX, TY>>(), 6);
         assert!(coin::is_account_registered<LSP<TX, TY>>(pool_account_addr), 7);
         assert!(get_pool_x<TX, TY>() == 0, 0);

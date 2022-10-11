@@ -17,7 +17,7 @@ module Aptoswap::pool {
 
     const NUMBER_1E8: u128 = 100000000;
 
-    const EPoolTypeCpmm: u8 = 100;
+    const EPoolTypeV2: u8 = 100;
     const EPoolTypeStableSwap: u8 = 101;
 
     const EFeeDirectionX: u8 = 200;
@@ -206,7 +206,11 @@ module Aptoswap::pool {
     }
 
     public entry fun create_pool<X, Y>(owner: &signer, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64) acquires SwapCap, Pool {
-        let _ = create_pool_impl<X, Y>(owner, fee_direction, admin_fee, lp_fee, incentive_fee, connect_fee, withdraw_fee);
+        let _ = create_pool_impl<X, Y>(owner, EPoolTypeV2, fee_direction, admin_fee, lp_fee, incentive_fee, connect_fee, withdraw_fee);
+    }
+
+    public entry fun create_stable_pool<X, Y>(owner: &signer, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64) acquires SwapCap, Pool {
+        let _ = create_pool_impl<X, Y>(owner, EPoolTypeStableSwap, fee_direction, admin_fee, lp_fee, incentive_fee, connect_fee, withdraw_fee);
     }
 
     public entry fun change_fee<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64) acquires Pool {
@@ -341,12 +345,13 @@ module Aptoswap::pool {
         managed_coin::mint<Token>(owner, recipient, amount);
     }
 
-    public(friend) fun create_pool_impl<X, Y>(owner: &signer, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64): address acquires SwapCap, Pool {
+    public(friend) fun create_pool_impl<X, Y>(owner: &signer, pool_type: u8, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64): address acquires SwapCap, Pool {
         validate_admin(owner);
 
         let owner_addr = signer::address_of(owner);
 
         assert!(fee_direction == EFeeDirectionX || fee_direction == EFeeDirectionY, EInvalidParameter);
+        assert!(pool_type == EPoolTypeV2 || pool_type == EPoolTypeStableSwap, EInvalidParameter);
         
         assert!(lp_fee >= 0 && admin_fee >= 0 && incentive_fee >= 0 && connect_fee >= 0, EWrongFee);
         assert!(lp_fee + admin_fee + incentive_fee + connect_fee < (BPS_SCALING as u64), EWrongFee);
@@ -367,7 +372,7 @@ module Aptoswap::pool {
         // Create pool and move
         let pool = Pool<X, Y> {
             index: pool_index,
-            pool_type: EPoolTypeCpmm,
+            pool_type: pool_type,
 
             x: coin::zero<X>(),
             y: coin::zero<Y>(),
