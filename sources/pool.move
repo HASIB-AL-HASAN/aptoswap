@@ -193,8 +193,8 @@ module Aptoswap::pool {
         initialize_impl(owner, demicals);
     }
 
-    public entry fun withdraw_bank<X>(user: &signer, amount: u64) acquires Bank {
-        withdraw_bank_impl<X>(user, amount);
+    public entry fun withdraw_bank<X>(owner: &signer, amount: u64) acquires Bank {
+        withdraw_bank_impl<X>(owner, amount);
     }
 
     public entry fun mint_token(owner: &signer, amount: u64, recipient: address) {
@@ -251,7 +251,9 @@ module Aptoswap::pool {
 
     // ============================================= Implementations =============================================
     public(friend) fun initialize_impl(owner: &signer, demicals: u8) {
-        // let owner_addr = signer::address_of(owner);
+        validate_admin(owner);
+
+        // Register the tokens
         managed_coin::initialize<Token>(
             owner,
             b"Aptoswap",
@@ -290,19 +292,22 @@ module Aptoswap::pool {
         move_to(owner, aptos_cap);
     }
 
-    public(friend) fun withdraw_bank_impl<X>(user: &signer, amount: u64) acquires Bank {
+    public(friend) fun withdraw_bank_impl<X>(owner: &signer, amount: u64) acquires Bank {
+        validate_admin(owner);
+
         let bank = borrow_global_mut<Bank<X>>(@Aptoswap);
-        let user_addr = signer::address_of(user);
-        validate_admin(user_addr);
-        assert!(amount > 0, EInvalidParameter);
-        assert!(amount <= coin::value(&bank.coin), ENotEnoughBalance);
+        let max_amount = coin::value(&bank.coin);
+
+        if (amount == 0) {
+            amount = max_amount;
+        };
+        assert!(amount <= max_amount, ENotEnoughBalance);
 
         let c = coin::extract(&mut bank.coin, amount);
 
-        if (!coin::is_account_registered<X>(user_addr)) {
-            managed_coin::register<X>(user);
-        };
-        coin::deposit(user_addr, c);
+        let owner_addr = signer::address_of(owner);
+        register_coin_if_needed<X>(owner);
+        coin::deposit(owner_addr, c);
     }
 
     public(friend) fun mint_test_token_impl(owner: &signer, amount: u64, recipient: address) acquires SwapCap, TestTokenCapabilities {
@@ -324,27 +329,33 @@ module Aptoswap::pool {
     }
 
     public(friend) fun mint_token_impl(owner: &signer, amount: u64, recipient: address) {
-        let owner_addr = signer::address_of(owner);
-        validate_admin(owner_addr);
+        validate_admin(owner);
+
         assert!(amount > 0, EInvalidParameter);
 
-        // if (!coin::is_account_registered<Token>(owner_addr) && (owner_addr == recipient)) {
-        //     managed_coin::register<Token>(owner);
-        // };
+        let owner_addr = signer::address_of(owner);
+        if (!coin::is_account_registered<Token>(owner_addr) && (owner_addr == recipient)) {
+            managed_coin::register<Token>(owner);
+        };
 
         managed_coin::mint<Token>(owner, recipient, amount);
     }
 
     public(friend) fun create_pool_impl<X, Y>(owner: &signer, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64): address acquires SwapCap, Pool {
+        validate_admin(owner);
+
         let owner_addr = signer::address_of(owner);
 
-        assert!(owner_addr == @Aptoswap, EPermissionDenied);
+        assert!(fee_direction == EFeeDirectionX || fee_direction == EFeeDirectionY, EInvalidParameter);
+        
         assert!(lp_fee >= 0 && admin_fee >= 0 && incentive_fee >= 0 && connect_fee >= 0, EWrongFee);
         assert!(lp_fee + admin_fee + incentive_fee + connect_fee < (BPS_SCALING as u64), EWrongFee);
         assert!(withdraw_fee < (BPS_SCALING as u64), EWrongFee);
 
+        // Note: we restrict the owner to the admin, which is @Aptoswap in create_pool 
         let pool_account = owner;
         let pool_account_addr = owner_addr;
+        assert!(pool_account_addr == @Aptoswap, EPermissionDenied); // We can delete it, leave it here
 
         let aptos_cap = borrow_global_mut<SwapCap>(owner_addr);
         let pool_index = aptos_cap.pool_create_counter;
@@ -390,12 +401,8 @@ module Aptoswap::pool {
         move_to(pool_account, pool);
 
         // Register coin if needed for pool account
-        if (!coin::is_account_registered<X>(pool_account_addr)) {
-            managed_coin::register<X>(pool_account);
-        };
-        if (!coin::is_account_registered<Y>(pool_account_addr)) {
-            managed_coin::register<Y>(pool_account);
-        };
+        register_coin_if_needed<X>(pool_account);
+        register_coin_if_needed<Y>(pool_account);
         if (!exists<Bank<X>>(pool_account_addr)) {
             move_to(pool_account, empty_bank<X>(pool_account));
         };
@@ -437,9 +444,7 @@ module Aptoswap::pool {
     }
     
     public(friend) fun change_fee_impl<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64) acquires Pool {
-        let owner_addr = signer::address_of(owner);
-
-        validate_admin(owner_addr);
+        validate_admin(owner);
         assert!(lp_fee >= 0 && admin_fee >= 0 && incentive_fee >= 0 && connect_fee >= 0, EWrongFee);
         assert!(lp_fee + admin_fee + incentive_fee + connect_fee < (BPS_SCALING as u64), EWrongFee);
 
@@ -452,9 +457,9 @@ module Aptoswap::pool {
     }
 
     public(friend) fun freeze_or_unfreeze_pool_impl<X, Y>(owner: &signer, freeze: bool) acquires Pool {
+        validate_admin(owner);
+
         let pool_account_addr = @Aptoswap;
-        let owner_addr = signer::address_of(owner);
-        validate_admin(owner_addr);
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         pool.freeze = freeze;
     }
@@ -547,12 +552,8 @@ module Aptoswap::pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
-        if (!coin::is_account_registered<X>(user_addr)) {
-            managed_coin::register<X>(user);
-        };
-        if (!coin::is_account_registered<Y>(user_addr)) {
-            managed_coin::register<Y>(user);
-        };
+        register_coin_if_needed<X>(user);
+        register_coin_if_needed<Y>(user);
         assert!(in_amount <= coin::balance<X>(user_addr), ENotEnoughBalance);
 
         let in_coin = coin::withdraw<X>(user, in_amount);
@@ -650,12 +651,8 @@ module Aptoswap::pool {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
-        if (!coin::is_account_registered<X>(user_addr)) {
-            managed_coin::register<X>(user);
-        };
-        if (!coin::is_account_registered<Y>(user_addr)) {
-            managed_coin::register<Y>(user);
-        };
+        register_coin_if_needed<X>(user);
+        register_coin_if_needed<Y>(user);
         assert!(in_amount <= coin::balance<Y>(user_addr), ENotEnoughBalance);
 
         let in_coin = coin::withdraw<Y>(user, in_amount);
@@ -710,9 +707,7 @@ module Aptoswap::pool {
         let mint_cap = &borrow_global<LSPCapabilities<X, Y>>(pool_account_addr).mint;
 
         // Depsoit the coin to user
-        if (!coin::is_account_registered<LSP<X, Y>>(user_addr)) {
-            managed_coin::register<LSP<X, Y>>(user);
-        };
+        register_coin_if_needed<LSP<X, Y>>(user);
         coin::deposit<LSP<X, Y>>(
             user_addr,
             coin::mint<LSP<X, Y>>(
@@ -795,12 +790,8 @@ module Aptoswap::pool {
         collect_admin_fee(&mut coin_y_removed, pool.withdraw_fee);
 
         pool.lsp_supply = pool.lsp_supply - lsp_amount;
-        if (!coin::is_account_registered<X>(user_addr)) {
-            managed_coin::register<X>(user);
-        };
-        if (!coin::is_account_registered<Y>(user_addr)) {
-            managed_coin::register<Y>(user);
-        };
+        register_coin_if_needed<X>(user);
+        register_coin_if_needed<Y>(user);
 
         coin::deposit(user_addr, coin_x_removed);
         coin::deposit(user_addr, coin_y_removed);
@@ -837,8 +828,15 @@ module Aptoswap::pool {
 
     // ============================================= Helper Function =============================================
 
-    fun validate_admin(user_addr: address) {
-        assert!(exists<SwapCap>(user_addr), EPermissionDenied);
+    fun validate_admin(user: &signer) {
+        // assert!(exists<SwapCap>(user_addr), EPermissionDenied);
+        assert!(signer::address_of(user) == @Aptoswap, EPermissionDenied);
+    }
+
+    fun register_coin_if_needed<X>(user: &signer) {
+        if (!coin::is_account_registered<X>(signer::address_of(user))) {
+            managed_coin::register<X>(user);
+        };
     }
 
     fun empty_bank<X>(owner: &signer): Bank<X> {
