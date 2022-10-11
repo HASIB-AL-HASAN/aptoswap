@@ -23,7 +23,7 @@ class Network {
     }
 
     static testnet: () => AptosNetwork = () => {
-        return { fullnode: "https://ait3.aptosdev.com/v1", faucet: null }
+        return { fullnode: "https://testnet.aptoslabs.com/v1", faucet: null }
     }
 }
 
@@ -274,7 +274,7 @@ const newAccount = () => {
 }
 
 const getAccount = () => {
-    const encrypted = "NXt1fScxw3c4U7MjwiBlMNUlo0AV+EZ7qF1F/b1q09jAPu/bRi3QGrx0LcDveOgMMiKQV5ChhrJeFx2Hvtd4WQx6wFRMGr6JQSQQl2ocdcMCyR8HRFZC0sIbJcucPxzFGIG9z1+bUlECprfa/UMyd0MMWcZ8lDsiUg/d4nQ2icMm75xpHXeFbKJXyld3MzHD46kG+5FCpjL+Goo1y6et976OGDERBgPhECsNyJ9pLvaA9BRObqwsEisszw4bZDvdk3cNpulZSwPDg9vMwyNkQJ/BmXjCWy9CrS1Yv4jxUJjqCbyBEtqypnIc11YK7Du6afKzcFzllFSrBDKzria9xL9n6ZhVJ+0Ji7rAFtN1j14sQJCZ9hKHbuxjylO5IG/4etYa9o2qxZ7AlppQmvLVUToYwUALy3u2PafwgDjgwQCvQqpuJuoXbKLjTDpRO3NYD01Pdy4OogXgrYt3LqHSYWBysoKh9V9r1IN0zh/FQ0jx4T/z9XZ697386rY/VeswEf+SBpIC9rDXzhkKB3essQ==";
+    const encrypted = "VTr5CEVUsu5J5Rmy80enthK6IN94yNsusn5aen4BDrrloII6IjiWA07V+P3KIDXBNvWpSomXS84yXpoxCWLlx95E+xjUmw3MRwsRu2nj9G0qWTYwdj/xBsCJDPlEEEdxHdn62ggRHOhFnaw+96ODZzacWTMxNy+aL2OszcqUQMKq3Jfj+Yef8uiTptwIWpCPjLwTLaYTSoot+OR8mT5fkGCaMkl0EgM/0MzHiaCbXxBiOXdN8RoAkLkxyjaKpdKkmGjx7jHo1TOpb6wyCp0EA5n8r8xf30G98GCrc3IplgNMFR+Lm0D9qlw4W36bWAwCxvQOCh03Roh1RdPJ5N8EfMSeT52liiY1niyqIltuRnu8nDPzzgtpAeVQE6DtprfmdETRnMVlVAh8c8LikrShM/LgxrH0SF+ExI4DCf99s/WzdZo7xy/rA6FwnaDWG35GPIbze/bY6JiDoPtVr9YEncgeJzMP+5/McwufYgiNfnMLQExAdoSGNq6mRlwrPxFzN6DjZxFZGcKoPm7ivWRgaQ==";
     const password = prompt("Enter the email/password to get a account[format: <email>/<password>]: ").trim();
     const decrypted = Cipher.decrypt(encrypted, password);
 
@@ -375,6 +375,7 @@ const autoFund = async (account: AptosAccount, client: AptosClient, faucetClient
 const actionCreatePool = async () => {
     const HIPPO_TOKEN_PACKAGE_ADDR = "0xdeae46f81671e76f444e2ce5a299d9e1ea06a8fa26e81dfd49aa7fa5a5a60e01";
     const CELER_TOKEN_PACKAGE_ADDR = "0xbc954a7df993344c9fec9aaccdf96673a897025119fc38a8e0f637598496b47a";
+    const TORTUGA_FINANCE_PACKAGE_ADDR = "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27";
 
     const [account, client, faucetClient, net] = await setup();
     const accountAddr = account.address();
@@ -422,15 +423,26 @@ const actionCreatePool = async () => {
             { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_weth_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y"  }
         ]
     }
+
+    const tortuga = {
+        fee: {
+            adminFee: 1,
+            lpFee: 4,
+            incentiveFee: 1,
+            connectFee: 0,
+            withdrawFee: 10,
+        },
+        tokens: [
+            { coin: [`${TORTUGA_FINANCE_PACKAGE_ADDR}::staked_aptos_coin::StakedAptosCoin`, "0x1::aptos_coin::AptosCoin"],  direction: "Y" },
+        ]
+    }
     
 
     // Create pool
-    for (const poolConfig of [hippo, celer]) {
+    for (const poolConfig of [hippo, celer, tortuga]) {
         const fee = poolConfig.fee;
         const tokens = poolConfig.tokens;
         for (const tk of tokens) {
-            const coin = tk.coin;
-            const direction = tk.direction;
             await executeMoveCall(
                 client, account,
                 {
