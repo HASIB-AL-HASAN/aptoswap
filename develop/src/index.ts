@@ -9,21 +9,22 @@ const prompt_ = require('prompt-sync')();
 export const delay = (ms: number) => { return new Promise(resolve => setTimeout(resolve, ms)) };
 
 export interface AptosNetwork {
+    type: "local" | "devnet" | "testnet" | "mainnet";
     fullnode: string;
     faucet: string | null;
 }
 
 class Network {
     static local: () => AptosNetwork = () => {
-        return { fullnode: "http://127.0.0.1:8080/v1", faucet: "http://127.0.0.1:8081" }
+        return { fullnode: "http://127.0.0.1:8080/v1", faucet: "http://127.0.0.1:8081", type: "local" }
     }
 
     static devnet: () => AptosNetwork = () => {
-        return { fullnode: "https://fullnode.devnet.aptoslabs.com/v1", faucet: "https://faucet.devnet.aptoslabs.com" }
+        return { fullnode: "https://fullnode.devnet.aptoslabs.com/v1", faucet: "https://faucet.devnet.aptoslabs.com", type: "devnet" }
     }
 
     static testnet: () => AptosNetwork = () => {
-        return { fullnode: "https://testnet.aptoslabs.com/v1", faucet: null }
+        return { fullnode: "https://testnet.aptoslabs.com/v1", faucet: null, type: "testnet" }
     }
 }
 
@@ -171,7 +172,7 @@ const executeMoveCall = async (client: AptosClient, account: AptosAccount, trans
         }
         else {
             console.log(`[WARNING] Execution failed on ${transaction.function}`);
-            // console.log(e);
+            console.log(e);
         }
     }
 
@@ -373,11 +374,19 @@ const autoFund = async (account: AptosAccount, client: AptosClient, faucetClient
 }
 
 const actionCreatePool = async () => {
+    const [account, client, faucetClient, net] = await setup();
+
     const HIPPO_TOKEN_PACKAGE_ADDR = "0xdeae46f81671e76f444e2ce5a299d9e1ea06a8fa26e81dfd49aa7fa5a5a60e01";
     const CELER_TOKEN_PACKAGE_ADDR = "0xbc954a7df993344c9fec9aaccdf96673a897025119fc38a8e0f637598496b47a";
-    const TORTUGA_FINANCE_PACKAGE_ADDR = "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27";
+    const TORTUGA_FINANCE_PACKAGE_ADDR = {
+        "devnet": "0x12d75d5bde2535789041cd380e832038da873a4ba86348ca891d374e1d0e15ab",
+        "testnet": "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27"
+    }[net.type as string];
 
-    const [account, client, faucetClient, net] = await setup();
+    if (TORTUGA_FINANCE_PACKAGE_ADDR === undefined) {
+        throw new Error(`TORTUGA_FINANCE_PACKAGE_ADDR not configure for ${net.type}`);
+    }
+
     const accountAddr = account.address();
     const packageAddr = accountAddr;
     await autoFund(account, client, faucetClient, 0.8);
@@ -438,11 +447,21 @@ const actionCreatePool = async () => {
     }
     
 
+    // Getting the pools
+    const createdPoolTypes = (await client.getAccountResources(packageAddr)).filter(resource => resource.type.startsWith(`${packageAddr}::pool::Pool`)).map(x => x.type);
+
     // Create pool
     for (const poolConfig of [hippo, celer, tortuga]) {
         const fee = poolConfig.fee;
         const tokens = poolConfig.tokens;
         for (const tk of tokens) {
+
+            const isPoolNotExists = (createdPoolTypes.every(ty => (!ty.includes(tk.coin[0]) || !ty.includes(tk.coin[1])) ));
+            if (!isPoolNotExists) {
+                console.log(`Skip creating pool: ${tk.coin[0]}/${tk.coin[1]}`)
+                continue;
+            }
+
             await executeMoveCall(
                 client, account,
                 {
