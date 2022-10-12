@@ -8,6 +8,58 @@ const prompt_ = require('prompt-sync')();
 
 export const delay = (ms: number) => { return new Promise(resolve => setTimeout(resolve, ms)) };
 
+class MoveTemplateType {
+    head: string;
+    typeArgs: Array<string>;
+
+    constructor(head: string, typeArgs: string[]) {
+        this.head = head;
+        this.typeArgs = typeArgs;
+    }
+
+    static fromString(s: string): MoveTemplateType | null {
+        try {
+            // Remove empty space
+            const ms = s.match(/^(.+?)<(.*)>$/) as RegExpMatchArray;
+            const head = ms[1];
+            const inner = ms[2];
+            let typeArgs: string[] = [];
+            let braceCounter: number = 0;
+
+            let currentArg = "";
+            for (let i = 0; i < inner.length; i += 1) {
+
+                const c = inner[i];
+                const nc = (i + 1 < inner.length) ? inner[i + 1] : ""
+
+                if (c === '<') { braceCounter += 1; }
+                else if (c === '>') { braceCounter -= 1; }
+
+                if (c === ',' && braceCounter === 0) { 
+                    if (currentArg !== "") {
+                        typeArgs.push(currentArg);
+                    }
+                    currentArg = "";
+                    if (nc === ' ') {
+                        i += 1;
+                    }
+                }
+                else {
+                    currentArg += c;
+                }
+            }
+
+            if (currentArg !== "") {
+                typeArgs.push(currentArg);
+            }
+
+            return { head, typeArgs }
+        } catch {}
+
+        return null;
+    }
+}
+
 export interface AptosNetwork {
     type: "local" | "devnet" | "testnet" | "mainnet";
     fullnode: string;
@@ -373,8 +425,8 @@ const autoFund = async (account: AptosAccount, client: AptosClient, faucetClient
     }
 }
 
-const actionCreatePool = async () => {
-    const [account, client, faucetClient, net] = await setup();
+const actionCreatePool = async (args: string[], setups?: SetupType) => {
+    const [account, client, faucetClient, net] = setups ?? (await setup());
 
     const HIPPO_TOKEN_PACKAGE_ADDR = "0xdeae46f81671e76f444e2ce5a299d9e1ea06a8fa26e81dfd49aa7fa5a5a60e01";
     const CELER_TOKEN_PACKAGE_ADDR = "0xbc954a7df993344c9fec9aaccdf96673a897025119fc38a8e0f637598496b47a";
@@ -413,6 +465,7 @@ const actionCreatePool = async () => {
             { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetSOL`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
             { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
             { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDT`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
         ]
     }
 
@@ -480,11 +533,48 @@ const actionCreatePool = async () => {
             );
         }
     }
-
 }
 
-const actionPublish = async () => {
-    const [account, client, faucetClient, net] = await setup();
+const actionFreezePool = async (args: string[], setups?: SetupType) => {
+    if (args.length === 0) {
+        errorAndExit("Filter must be provided for freezing pool");
+    }
+
+    const filters = args;
+
+    const [account, client, faucetClient, net] = setups ?? (await setup());
+    const accountAddr = account.address();
+    const packageAddr = accountAddr;
+    await autoFund(account, client, faucetClient, 0.8);
+
+    const resources = (await client.getAccountResources(packageAddr)).filter(resource => resource.type.startsWith(`${packageAddr}::pool::Pool`));
+    for (const resource of resources) {
+        if (!filters.every(filter => resource.type.includes(filter))) {
+            continue;
+        }
+
+        const mtt = MoveTemplateType.fromString(resource.type);
+        if (mtt === null) {
+            continue;
+        }
+
+        const xType = mtt.typeArgs[0];
+        const yType = mtt.typeArgs[1];
+        console.log(`[INFO] Freeze ${xType}/${yType}`);
+        await executeMoveCall(
+            client, account,
+            {
+                function: `${packageAddr}::pool::freeze_pool`,
+                type_arguments: [xType, yType],
+                arguments: []
+            },
+            false
+        );
+    }
+}
+
+const actionPublish = async (args: string[], setups?: SetupType) => {
+    const [account, client, faucetClient, net] = setups ?? (await setup());
     const accountAddr = account.address();
     const packageAddr = accountAddr;
     await autoFund(account, client, faucetClient, 0.8);
@@ -534,16 +624,17 @@ const actionPublish = async () => {
     );
 }
 
-const actionNewAccount = async () => { await newAccount(); }
+const actionNewAccount = async (args: string[], setups?: SetupType) => { await newAccount(); }
 
-const actionGetAccount = async () => { await getAccount(); }
+const actionGetAccount = async (args: string[], setups?: SetupType) => { await getAccount(); }
 
 const executeAction = async () => {
-    const commands: Map<string, () => Promise<void>> = new Map([
+    const commands: Map<string, (args: string[], setups?: SetupType) => Promise<void>> = new Map([
         ["publish", actionPublish],
         ["new-account", actionNewAccount],
         ["account", actionGetAccount],
-        ["create-pool", actionCreatePool]
+        ["create-pool", actionCreatePool],
+        ["freeze-pool", actionFreezePool] 
     ]);
 
     if (process.argv.length < 3) {
@@ -554,7 +645,7 @@ const executeAction = async () => {
     const command = commands.get(commandStr);
 
     if (command !== undefined) {
-        await command();
+        await command(process.argv.slice(3));
     }
     else {
         errorAndExit(`Invalid action \"${commandStr}\", possible options: \"${Array(commands.keys()).join("|")}\"`)
