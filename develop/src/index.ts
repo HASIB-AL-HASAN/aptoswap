@@ -207,7 +207,7 @@ const executeMoveCall = async (client: AptosClient, account: AptosAccount, trans
         account.address(),
         payload,
         {
-            maxGasAmount: option?.maxGasAmount ?? BigInt(1000),
+            maxGasAmount: option?.maxGasAmount ?? BigInt(20000),
             gasUnitPrice: option?.gasUnitPrice ?? _MOVE_CALL_MIN_GAS_UNIT_PRICE,
             expireTimestamp: BigInt(Math.floor(Date.now() / 1000) + (option?.expirationSecond ?? 60.0))
         }
@@ -217,14 +217,25 @@ const executeMoveCall = async (client: AptosClient, account: AptosAccount, trans
     const submitTransaction = await client.submitSignedBCSTransaction(signedTransaction);
 
     try {
-        await client.waitForTransactionWithResult(submitTransaction.hash, { timeoutSecs: 60.0, checkSuccess: true });
+        const reuslt = await client.waitForTransactionWithResult(submitTransaction.hash, { timeoutSecs: 60.0, checkSuccess: true });
+        const gasUsed = (reuslt as any).gas_used;
+        if (gasUsed !== undefined) {
+            const gasUsedShow = gasUsed / (10 ** 8);
+            console.log(`[INFO] Gas used: ${gasUsed}(${gasUsedShow})`)
+        }
     } catch (e) {
+        let reason: string | undefined = undefined;
+
+        const transaction = (e as any).transaction;
+        if (transaction !== undefined) {
+            reason = transaction.vm_status;
+        }
+
         if (exit) {
-            errorAndExit(e);
+            errorAndExit(e, 1, reason);
         }
         else {
-            console.log(`[WARNING] Execution failed on ${transaction.function}`);
-            console.log(e);
+            console.log(`[WARNING] Execution failed on ${transaction.function} [REASON: ${reason}]`);
         }
     }
 
@@ -251,8 +262,9 @@ const hexToBytes = (hex: string) => {
     return new Uint8Array(bytes);
 }
 
-const errorAndExit = (s: any, exitCode?: number) => {
-    console.log(`[ERROR] ${s}`);
+const errorAndExit = (s: any, exitCode?: number, reason?: string) => {
+    const reasonOrNull = (reason === undefined) ? "" : `[Reason: ${reason}]`
+    console.log(`[ERROR] ${s} ${reasonOrNull}`);
     process.exit(exitCode ?? 1);
 }
 
@@ -289,7 +301,7 @@ const publishModule = async (client: AptosClient, accountFrom: AptosAccount, mod
         accountFrom, metadata, 
         moduleHexes.map(hex => new TxnBuilderTypes.Module(hex)),
         {
-            maxGasAmount: option?.maxGasAmount ?? BigInt(200000),
+            maxGasAmount: option?.maxGasAmount ?? BigInt(20000),
             gasUnitPrice: option?.gasUnitPrice ?? _MOVE_CALL_MIN_GAS_UNIT_PRICE,
             expireTimestamp: BigInt(Math.floor(Date.now() / 1000) + (option?.expirationSecond ?? 60.0))
         }
