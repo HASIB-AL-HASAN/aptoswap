@@ -440,7 +440,7 @@ const autoFund = async (account: AptosAccount, client: AptosClient, faucetClient
 const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const [account, client, faucetClient, net] = setups ?? (await setup());
 
-    const HIPPO_TOKEN_PACKAGE_ADDR = "0xdeae46f81671e76f444e2ce5a299d9e1ea06a8fa26e81dfd49aa7fa5a5a60e01";
+    const HIPPO_TOKEN_PACKAGE_ADDR = "0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68";
     const CELER_TOKEN_PACKAGE_ADDR = "0xbc954a7df993344c9fec9aaccdf96673a897025119fc38a8e0f637598496b47a";
     const TORTUGA_FINANCE_PACKAGE_ADDR = {
         "devnet": "0x12d75d5bde2535789041cd380e832038da873a4ba86348ca891d374e1d0e15ab",
@@ -459,7 +459,7 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const currentBalanceShow = Number(currentBalance) / (10 ** 8);
     console.log(`[INFO] Current balance: ${currentBalance}(${currentBalanceShow})`);
 
-    const hippo = {
+    const aptoswap = {
         fee: {
             adminFee: 3,
             lpFee: 26,
@@ -469,15 +469,27 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
         },
         tokens: [
             { coin: [`${packageAddr}::pool::TestToken`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
-            { coin: [`${packageAddr}::pool::Token`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBNB`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${packageAddr}::pool::Token`, "0x1::aptos_coin::AptosCoin"], direction: "Y" }
+        ]
+    }
+
+    const hippo = {
+        fee: {
+            adminFee: 3,
+            lpFee: 26,
+            incentiveFee: 0,
+            connectFee: 1,
+            withdrawFee: 10,
+        },
+        tokens: [
             { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
             { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetDAI`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetETH`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetSOL`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
             { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
             { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDT`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetDAI`], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDC`], direction: "Y" },
+            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDT`], direction: "Y" },
         ]
     }
 
@@ -493,7 +505,7 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
             { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_dai_coin::TestMintCoin`],  direction: "Y" },
             { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_usdc_coin::TestMintCoin`], direction: "Y" },
             { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_usdt_coin::TestMintCoin`], direction: "Y" },
-            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_wbtc_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_wbtc_coin::TestMintCoin`], direction: "Y" },
             { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_weth_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y"  }
         ]
     }
@@ -516,7 +528,7 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const createdPoolTypes = (await client.getAccountResources(packageAddr)).filter(resource => resource.type.startsWith(`${packageAddr}::pool::Pool`)).map(x => x.type);
 
     // Create pool
-    for (const poolConfig of [hippo, celer, tortuga]) {
+    for (const poolConfig of [aptoswap, hippo, celer, tortuga]) {
         const fee = poolConfig.fee;
         const tokens = poolConfig.tokens;
         for (const tk of tokens) {
