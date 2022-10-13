@@ -10,7 +10,7 @@ module Aptoswap::pool {
     use aptos_framework::account;
     use aptos_framework::timestamp;
 
-    use Aptoswap::utils::{ WeeklySmaU128, create_sma128, add_sma128};
+    use Aptoswap::utils::{ WeeklySmaU128, create_sma128, add_sma128, pow10 };
 
     #[test_only]
     friend Aptoswap::pool_test;
@@ -51,11 +51,15 @@ module Aptoswap::pool {
     const EPoolNotFound: u64 = 134012;
     /// Create duplicate pool
     const EPoolDuplicate: u64 = 134013;
+    /// Stable coin decimal too large
+    const ECreatePoolStableCoinDecimalTooLarge: u64 = 134014;
 
     /// The integer scaling setting for fees calculation.
     const BPS_SCALING: u128 = 10000;
     /// The maximum number of u64
     const U64_MAX: u128 = 18446744073709551615;
+    /// The max decimal of stable swap coin
+    const STABLESWAP_COIN_MAX_DECIMAL: u8 = 18;
 
     /// The interval between the snapshot in seconds
     const SNAPSHOT_INTERVAL_SEC: u64 = 900;
@@ -159,6 +163,13 @@ module Aptoswap::pool {
         connect_fee: u64,
         /// Fee when user withdraw lsp token
         withdraw_fee: u64,
+
+        /// Stable pool amplifier
+        stable_amp: u64, 
+        /// The scaling factor that aligns x's decimal to 18
+        stable_x_scale: u64,
+        /// The scaling factor that aligns y's decimal to 18
+        stable_y_scale: u64,
         
         /// Whether the pool is freezed for swapping and adding liquidity
         freeze: bool,
@@ -206,11 +217,11 @@ module Aptoswap::pool {
     }
 
     public entry fun create_pool<X, Y>(owner: &signer, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64) acquires SwapCap, Pool {
-        let _ = create_pool_impl<X, Y>(owner, EPoolTypeV2, fee_direction, admin_fee, lp_fee, incentive_fee, connect_fee, withdraw_fee);
+        let _ = create_pool_impl<X, Y>(owner, EPoolTypeV2, fee_direction, admin_fee, lp_fee, incentive_fee, connect_fee, withdraw_fee, 0);
     }
 
-    public entry fun create_stable_pool<X, Y>(owner: &signer, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64) acquires SwapCap, Pool {
-        let _ = create_pool_impl<X, Y>(owner, EPoolTypeStableSwap, fee_direction, admin_fee, lp_fee, incentive_fee, connect_fee, withdraw_fee);
+    public entry fun create_stable_pool<X, Y>(owner: &signer, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64, amp: u64) acquires SwapCap, Pool {
+        let _ = create_pool_impl<X, Y>(owner, EPoolTypeStableSwap, fee_direction, admin_fee, lp_fee, incentive_fee, connect_fee, withdraw_fee, amp);
     }
 
     public entry fun change_fee<X, Y>(owner: &signer, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64) acquires Pool {
@@ -345,7 +356,7 @@ module Aptoswap::pool {
         managed_coin::mint<Token>(owner, recipient, amount);
     }
 
-    public(friend) fun create_pool_impl<X, Y>(owner: &signer, pool_type: u8, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64): address acquires SwapCap, Pool {
+    public(friend) fun create_pool_impl<X, Y>(owner: &signer, pool_type: u8, fee_direction: u8, admin_fee: u64, lp_fee: u64, incentive_fee: u64, connect_fee: u64, withdraw_fee: u64, amp: u64): address acquires SwapCap, Pool {
         validate_admin(owner);
 
         let owner_addr = signer::address_of(owner);
@@ -369,6 +380,21 @@ module Aptoswap::pool {
         // Check whether the pool we've created
         assert!(!exists<Pool<X, Y>>(pool_account_addr), EPoolDuplicate);
 
+        // Get the coin scale for x and y, used for stable
+        let stable_x_scale: u64 = 0;
+        let stable_y_scale: u64 = 0;
+        if (pool_type == EPoolTypeStableSwap) {
+            
+            let x_decimal = coin::decimals<X>();
+            let y_decimal = coin::decimals<Y>();
+
+            assert!(x_decimal <= STABLESWAP_COIN_MAX_DECIMAL && y_decimal <= STABLESWAP_COIN_MAX_DECIMAL, ECreatePoolStableCoinDecimalTooLarge);
+            assert!(amp > 0, EInvalidParameter);
+
+            stable_x_scale = pow10(STABLESWAP_COIN_MAX_DECIMAL - x_decimal);
+            stable_y_scale = pow10(STABLESWAP_COIN_MAX_DECIMAL - x_decimal);
+        };
+
         // Create pool and move
         let pool = Pool<X, Y> {
             index: pool_index,
@@ -385,6 +411,10 @@ module Aptoswap::pool {
             incentive_fee: incentive_fee,
             connect_fee: connect_fee,
             withdraw_fee: withdraw_fee,
+
+            stable_amp: amp,
+            stable_x_scale: stable_x_scale,
+            stable_y_scale: stable_y_scale,
 
             freeze: false,
 

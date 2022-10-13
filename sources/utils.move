@@ -90,4 +90,41 @@ module Aptoswap::utils {
             sma.c6 = sma.c6 + 1;
         }
     }
+
+    public fun pow10(num: u8): u64 {
+        // Naive implementation, we can refine with quick pow, but currently it is not necessary
+        let value: u64 = 1;
+        let i: u8 = 0;
+
+        while (i < num) {
+            value = value * 10;
+            i = i + 1;
+        };
+
+        value
+    }
+
+    #[test]
+    fun test_pow10() {
+        assert!(pow10(0) == 1, 0);
+        assert!(pow10(1) == 10, 1);
+        assert!(pow10(2) == 100, 2);
+        assert!(pow10(3) == 1000, 3);
+        assert!(pow10(4) == 10000, 4);
+        assert!(pow10(5) == 100000, 5);
+        assert!(pow10(6) == 1000000, 6);
+        assert!(pow10(7) == 10000000, 7);
+        assert!(pow10(8) == 100000000, 8);
+        assert!(pow10(9) == 1000000000, 9);
+        assert!(pow10(10) == 10000000000, 10);
+        assert!(pow10(11) == 100000000000, 11);
+        assert!(pow10(12) == 1000000000000, 12);
+        assert!(pow10(13) == 10000000000000, 13);
+        assert!(pow10(14) == 100000000000000, 14);
+        assert!(pow10(15) == 1000000000000000, 15);
+        assert!(pow10(16) == 10000000000000000, 16);
+        assert!(pow10(17) == 100000000000000000, 17);
+        assert!(pow10(18) == 1000000000000000000, 18);
+        assert!(pow10(19) == 10000000000000000000, 19);
+    }
 }
