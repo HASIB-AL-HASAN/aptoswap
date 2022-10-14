@@ -339,7 +339,7 @@ const newAccount = () => {
 }
 
 const getAccount = () => {
-    const encrypted = "NXt1fScxw3c4U7MjwiBlMNUlo0AV+EZ7qF1F/b1q09jAPu/bRi3QGrx0LcDveOgMMiKQV5ChhrJeFx2Hvtd4WQx6wFRMGr6JQSQQl2ocdcMCyR8HRFZC0sIbJcucPxzFGIG9z1+bUlECprfa/UMyd0MMWcZ8lDsiUg/d4nQ2icMm75xpHXeFbKJXyld3MzHD46kG+5FCpjL+Goo1y6et976OGDERBgPhECsNyJ9pLvaA9BRObqwsEisszw4bZDvdk3cNpulZSwPDg9vMwyNkQJ/BmXjCWy9CrS1Yv4jxUJjqCbyBEtqypnIc11YK7Du6afKzcFzllFSrBDKzria9xL9n6ZhVJ+0Ji7rAFtN1j14sQJCZ9hKHbuxjylO5IG/4etYa9o2qxZ7AlppQmvLVUToYwUALy3u2PafwgDjgwQCvQqpuJuoXbKLjTDpRO3NYD01Pdy4OogXgrYt3LqHSYWBysoKh9V9r1IN0zh/FQ0jx4T/z9XZ697386rY/VeswEf+SBpIC9rDXzhkKB3essQ==";
+    const encrypted = "NXt1fScxw3c4U7MjwiBlMNUlo0AV+EZ7qF1F/b1q09h9yU9zbBSeFZWLD7y4tsnEpsTrx8up/RoNlUaa/5Rt4xV/t3SmLr5zID88JKnTfk7pbdpjBzDjTln/yOi5GMwpXOyb87dLfc4nbZftgqBxc0MMWcZ8lDsiUg/d4nQ2icMJU4cUCpQPZEq+QsajXM+nyQwu5RdrENLE1lXmKt0p2iSv8RcOBgm0KEqKhlzx8hZySqwbo0PTuEmbwotg4EI1AhYn8oTOVpN4ONOH7I3aTOdqwfGabyRqYwgRHI950qeptdpGbJPid9PADFQofd0DfDUfdFECn10aDRPAv+FD9rGlaon1keal1mMYl9proH51n4Hif8Jf6EGM+GtHfEayetYa9o2qxZ7AlppQmvLVUToYwUALy3u2PafwgDjgwQCvQqpuJuoXbKLjTDpRO3NYD01Pdy4OogXgrYt3LqHSYWBysoKh9V9r1IN0zh/FQ0jx4T/z9XZ697386rY/VeswEf+SBpIC9rDXzhkKB3essQ==";
     const password = prompt("Enter the email/password to get a account[format: <email>/<password>]: ").trim();
     const decrypted = Cipher.decrypt(encrypted, password);
 
@@ -505,8 +505,8 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
             { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_dai_coin::TestMintCoin`],  direction: "Y" },
             { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_usdc_coin::TestMintCoin`], direction: "Y" },
             { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_usdt_coin::TestMintCoin`], direction: "Y" },
-            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_wbtc_coin::TestMintCoin`], direction: "Y" },
-            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_weth_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y"  }
+            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_wbtc_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_weth_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y" }
         ]
     }
 
