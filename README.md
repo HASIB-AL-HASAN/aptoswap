@@ -1,14 +1,12 @@
 # Aptoswap
 
-The smart contract source code for Aptoswap.
-
-### Contents
+### 📖 Contents
 
 - `pool.move`: The core implementation for Aptoswap.
 - `pool_test.move`: The test case and back-testing for `pool.move`.
 - `utils.move`: Useful utilities for Aptoswap.  
 
-## Getting Started
+## 🏃 Getting Started
 
 - Clone the repo:
 
