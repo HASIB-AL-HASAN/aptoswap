@@ -442,6 +442,7 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
 
     const HIPPO_TOKEN_PACKAGE_ADDR = "0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68";
     const CELER_TOKEN_PACKAGE_ADDR = "0xbc954a7df993344c9fec9aaccdf96673a897025119fc38a8e0f637598496b47a";
+    const BLUE_MOVE_PACKAGE_ADDR = "0xe4497a32bf4a9fd5601b27661aa0b933a923191bf403bd08669ab2468d43b379";
     const TORTUGA_FINANCE_PACKAGE_ADDR = {
         "devnet": "0x12d75d5bde2535789041cd380e832038da873a4ba86348ca891d374e1d0e15ab",
         "testnet": "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27"
@@ -522,13 +523,26 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
             { coin: [`${TORTUGA_FINANCE_PACKAGE_ADDR}::staked_aptos_coin::StakedAptosCoin`, "0x1::aptos_coin::AptosCoin"],  direction: "Y" },
         ]
     }
+
+    const bluemove = {
+        fee: {
+            adminFee: 0,
+            lpFee: 27,
+            incentiveFee: 3,
+            connectFee: 0,
+            withdrawFee: 10,
+        },
+        tokens: [
+            { coin: [`${BLUE_MOVE_PACKAGE_ADDR}::move_coin::MoveCoin`, "0x1::aptos_coin::AptosCoin"],  direction: "Y" },
+        ]
+    }
     
 
     // Getting the pools
     const createdPoolTypes = (await client.getAccountResources(packageAddr)).filter(resource => resource.type.startsWith(`${packageAddr}::pool::Pool`)).map(x => x.type);
 
     // Create pool
-    for (const poolConfig of [aptoswap, hippo, celer, tortuga]) {
+    for (const poolConfig of [aptoswap, hippo, celer, tortuga, bluemove]) {
         const fee = poolConfig.fee;
         const tokens = poolConfig.tokens;
         for (const tk of tokens) {
