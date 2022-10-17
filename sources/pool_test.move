@@ -17,7 +17,6 @@ module Aptoswap::pool_test {
         unfreeze_pool, 
         is_pool_freeze, 
         validate_lsp_from_address,
-        get_admin_balance,
         get_pool_x, 
         get_pool_y, 
         get_pool_lsp_supply, 
@@ -25,8 +24,9 @@ module Aptoswap::pool_test {
         get_pool_admin_fee, 
         get_pool_lp_fee, 
         get_pool_connect_fee, 
-        get_pool_incentive_fee, 
-        remove_liquidity_impl
+        get_pool_incentive_fee,
+        get_bank_balance,
+        remove_liquidity_impl_v2
     };
     use Aptoswap::pool::{ LSP, Token };
 
@@ -522,8 +522,8 @@ module Aptoswap::pool_test {
         };
 
         // Redeem the profit
-        let old_balance_tx = coin::balance<TX>(admin_addr);
-        let old_balance_ty = coin::balance<TY>(admin_addr);
+        let old_balance_tx = get_bank_balance<TX>();
+        let old_balance_ty = get_bank_balance<TY>();
 
         swap_x_to_y_impl<TX, TY>(guy, 5000, 0, 0);
 
@@ -533,8 +533,8 @@ module Aptoswap::pool_test {
         assert!(get_pool_x<TX, TY>() == 1004998, 1);
         assert!(get_pool_y<TX, TY>() == 995038737, 2);
         
-        assert!(coin::balance<TX>(admin_addr) == old_balance_tx + 2, 0);
-        assert!(coin::balance<TY>(admin_addr) == old_balance_ty, 0);
+        assert!(get_bank_balance<TX>() == old_balance_tx + 2, 0);
+        assert!(get_bank_balance<TY>() == old_balance_ty, 0);
         validate_lsp_from_address<TX, TY>();
 
         pool_account_addr
@@ -583,8 +583,8 @@ module Aptoswap::pool_test {
         };
 
         // Redeem the profit
-        let old_balance_tx = coin::balance<TX>(admin_addr);
-        let old_balance_ty = coin::balance<TY>(admin_addr);
+        let old_balance_tx = get_bank_balance<TX>();
+        let old_balance_ty = get_bank_balance<TY>();
 
         swap_y_to_x_impl<TX, TY>(guy, 5000000, 0, 0);
 
@@ -593,8 +593,8 @@ module Aptoswap::pool_test {
         assert!(get_pool_x<TX, TY>() == 995038, 1);
         assert!(get_pool_y<TX, TY>() == 1005000000, 2);
         
-        assert!(coin::balance<TX>(admin_addr) == old_balance_tx + 2, 0);
-        assert!(coin::balance<TY>(admin_addr) == old_balance_ty, 0);
+        assert!(get_bank_balance<TX>() == old_balance_tx + 2, 0);
+        assert!(get_bank_balance<TY>() == old_balance_ty, 0);
         validate_lsp_from_address<TX, TY>();
 
         pool_account_addr
@@ -698,14 +698,14 @@ module Aptoswap::pool_test {
         let (x_pool_ori_amt, y_pool_ori_amt) = (get_pool_x<TX, TY>(), get_pool_y<TX, TY>());
         let old_balance_tx = coin::balance<TX>(guy_addr);
         let old_balance_ty = coin::balance<TY>(guy_addr);
-        let old_balance_admin_tx = coin::balance<TX>(admin_addr);
-        let old_balance_admin_ty = coin::balance<TY>(admin_addr);
+        let old_balance_admin_tx = get_bank_balance<TX>();
+        let old_balance_admin_ty = get_bank_balance<TY>();
 
         
         if (!config.check_lsp_amount_larger) {
-            remove_liquidity_impl<TX, TY>(guy, lsp_take);
+            remove_liquidity_impl_v2<TX, TY>(guy, lsp_take, 0);
         } else {
-            remove_liquidity_impl<TX, TY>(guy, lsp_take + 1);
+            remove_liquidity_impl_v2<TX, TY>(guy, lsp_take + 1, 0);
         };
 
         validate_lsp_from_address<TX, TY>();
@@ -729,8 +729,8 @@ module Aptoswap::pool_test {
 
         let new_balance_tx = coin::balance<TX>(guy_addr);
         let new_balance_ty = coin::balance<TY>(guy_addr);
-        let new_balance_admin_tx = coin::balance<TX>(admin_addr);
-        let new_balance_admin_ty = coin::balance<TY>(admin_addr);
+        let new_balance_admin_tx = get_bank_balance<TX>();
+        let new_balance_admin_ty = get_bank_balance<TY>();
 
         assert!(new_balance_tx - old_balance_tx == x_guy_amt_checked , 0);
         assert!(new_balance_ty - old_balance_ty == y_guy_amt_checked, 1);
@@ -831,8 +831,8 @@ module Aptoswap::pool_test {
 
         // TODO
         test_utils_create_pool(admin, s.x_init, s.y_init, s.fee_direction);
-        let ori_admin_x = get_admin_balance<TX>();
-        let ori_admin_y = get_admin_balance<TX>();
+        let ori_admin_x = get_bank_balance<TX>();
+        let ori_admin_y = get_bank_balance<TY>();
 
         let i: u64 = 0;
         let data_legnth: u64 = vector::length(&s.data);
@@ -858,8 +858,8 @@ module Aptoswap::pool_test {
             let (x_amt, y_amt) = (get_pool_x<TX, TY>(), get_pool_y<TX, TY>());
             assert!(x_amt == info.x_checked, i);
             assert!(y_amt == info.y_checked, i);
-            assert!(get_admin_balance<TX>() - ori_admin_x == info.x_admin_checked, i);
-            assert!(get_admin_balance<TY>() - ori_admin_y == info.y_admin_checked, i);
+            assert!(get_bank_balance<TX>() - ori_admin_x == info.x_admin_checked, i);
+            assert!(get_bank_balance<TY>() - ori_admin_y == info.y_admin_checked, i);
             
             i = i + 1;
         }

@@ -637,15 +637,17 @@ const actionPublish = async (args: string[], setups?: SetupType) => {
     }
 
     // Initialize
-    await executeMoveCall(
-        client, account,
-        {
-            function: `${packageAddr}::pool::initialize`,
-            type_arguments: [],
-            arguments: [["u8", 6]]
-        },
-        true
-    );
+    if (prompt("Do you want to call the pool::initialize command [yes/no]", "yes").trim().toLocaleLowerCase() === "yes") {
+        await executeMoveCall(
+            client, account,
+            {
+                function: `${packageAddr}::pool::initialize`,
+                type_arguments: [],
+                arguments: [["u8", 6]]
+            },
+            true
+        );
+    }
 }
 
 const actionNewAccount = async (args: string[], setups?: SetupType) => { await newAccount(); }
