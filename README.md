@@ -20,9 +20,11 @@ git clone git@github.com:vividnetwork/aptoswap.git
 git submodule update --init --recursive
 ```
 
-- Run test cases:
+- Run test cases (make sure your `aptos` command line is compatiable with the `aptos-core` in `submodules`):
 
-### Cooperate with `swap-ui`:
+```
+aptos move test
+```
 
 - Compile the module:
 
