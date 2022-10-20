@@ -181,6 +181,9 @@ module Aptoswap::pool {
         /// Whether the pool is freezed for swapping and adding liquidity
         freeze: bool,
 
+        /// Last trade time
+        last_trade_time: u64,
+
         /// Number of x has been traded
         total_trade_x: u128,
         /// Number of y has been traded
@@ -440,6 +443,8 @@ module Aptoswap::pool {
 
             freeze: false,
 
+            last_trade_time: 0,
+
             total_trade_x: 0,
             total_trade_y: 0,
 
@@ -576,6 +581,9 @@ module Aptoswap::pool {
         pool.total_trade_y = pool.total_trade_y + (output_amount as u128);
 
         if (current_time > 0) {
+
+            pool.last_trade_time = current_time;
+
             if (pool.total_trade_24h_last_capture_time + TOTAL_TRADE_24H_INTERVAL_SEC < current_time) {
                 pool.total_trade_24h_last_capture_time = current_time;
                 pool.total_trade_x_24h = 0;
@@ -675,6 +683,9 @@ module Aptoswap::pool {
         pool.total_trade_x = pool.total_trade_x + (output_amount as u128);
 
         if (current_time > 0) {
+
+            pool.last_trade_time = current_time;
+
             if (pool.total_trade_24h_last_capture_time + TOTAL_TRADE_24H_INTERVAL_SEC < current_time) {
                 pool.total_trade_24h_last_capture_time = current_time;
                 pool.total_trade_x_24h = 0;
