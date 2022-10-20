@@ -78,6 +78,10 @@ class Network {
     static testnet: () => AptosNetwork = () => {
         return { fullnode: "https://testnet.aptoslabs.com/v1", faucet: null, type: "testnet" }
     }
+
+    static mainnet: () => AptosNetwork = () => {
+        return { fullnode: "https://fullnode.mainnet.aptoslabs.com/v1", faucet: null, type: "mainnet" }
+    }
 }
 
 class Cipher {
@@ -301,7 +305,7 @@ const publishModule = async (client: AptosClient, accountFrom: AptosAccount, mod
         accountFrom, metadata, 
         moduleHexes.map(hex => new TxnBuilderTypes.Module(hex)),
         {
-            maxGasAmount: option?.maxGasAmount ?? BigInt(20000),
+            maxGasAmount: option?.maxGasAmount ?? BigInt(1900000),
             gasUnitPrice: option?.gasUnitPrice ?? _MOVE_CALL_MIN_GAS_UNIT_PRICE,
             expireTimestamp: BigInt(Math.floor(Date.now() / 1000) + (option?.expirationSecond ?? 60.0))
         }
@@ -394,11 +398,12 @@ type SetupType = [AptosAccount, AptosClient, FaucetClient | null, AptosNetwork];
 const setup: () => Promise<SetupType> = async () => {
     // Get the network
 
-    let selectNetworkInput = prompt("Select your network [devnet|localhost|testnet] (default: localhost): ", "localhost").trim();
+    let selectNetworkInput = prompt("Select your network [devnet | localhost | testnet | mainnet] (default: localhost): ", "localhost").trim();
     const n: AptosNetwork = ({
         devnet: Network.devnet(),
         localhost: Network.local(),
-        testnet: Network.testnet()
+        testnet: Network.testnet(),
+        mainnet: Network.mainnet()
     } as any)[selectNetworkInput];
 
     if (n === undefined) {
@@ -444,8 +449,8 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const CELER_TOKEN_PACKAGE_ADDR = "0xbc954a7df993344c9fec9aaccdf96673a897025119fc38a8e0f637598496b47a";
     const BLUE_MOVE_PACKAGE_ADDR = "0xe4497a32bf4a9fd5601b27661aa0b933a923191bf403bd08669ab2468d43b379";
     const TORTUGA_FINANCE_PACKAGE_ADDR = {
-        "devnet": "0x12d75d5bde2535789041cd380e832038da873a4ba86348ca891d374e1d0e15ab",
-        "testnet": "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27"
+        devnet: "0x12d75d5bde2535789041cd380e832038da873a4ba86348ca891d374e1d0e15ab",
+        testnet: "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27"
     }[net.type as string];
 
     if (TORTUGA_FINANCE_PACKAGE_ADDR === undefined) {
@@ -471,6 +476,22 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
         tokens: [
             { coin: [`${packageAddr}::pool::TestToken`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
             { coin: [`${packageAddr}::pool::Token`, "0x1::aptos_coin::AptosCoin"], direction: "Y" }
+        ]
+    }
+
+    const primary = {
+        fee: {
+            adminFee: 0,
+            lpFee: 30,
+            incentiveFee: 0,
+            connectFee: 0,
+            withdrawFee: 10,
+        },
+        tokens: [
+            // APT/USDC
+            { coin: [`0x1::aptos_coin::AptosCoin`, "0x5e156f1207d0ebfa19a9eeff00d62a282278fb8719f4fab3a586a0a2c0fffbea::coin::T"], direction: "Y" },
+            // APT/USDT
+            { coin: [`0x1::aptos_coin::AptosCoin`, "0xa2eda21a58856fda86451436513b867c97eecb4ba099da5775520e0f7492e852::coin::T"], direction: "Y" }
         ]
     }
 
@@ -539,15 +560,22 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     
 
     // Getting the pools
-    const createdPoolTypes = (await client.getAccountResources(packageAddr)).filter(resource => resource.type.startsWith(`${packageAddr}::pool::Pool`)).map(x => x.type);
+    const existsPoolTypes = (await client.getAccountResources(packageAddr)).filter(resource => resource.type.startsWith(`${packageAddr}::pool::Pool`)).map(x => x.type);
+
+    // Get the pool configs
+    const poolsConfigs = {
+        devnet: [primary, aptoswap, hippo, celer, tortuga, bluemove],
+        testnet: [primary, aptoswap, hippo, celer, tortuga, bluemove],
+        mainnet: [primary]
+    }[net.type as string]!;
 
     // Create pool
-    for (const poolConfig of [aptoswap, hippo, celer, tortuga, bluemove]) {
+    for (const poolConfig of poolsConfigs) {
         const fee = poolConfig.fee;
         const tokens = poolConfig.tokens;
         for (const tk of tokens) {
 
-            const isPoolNotExists = (createdPoolTypes.every(ty => (!ty.includes(tk.coin[0]) || !ty.includes(tk.coin[1])) ));
+            const isPoolNotExists = (existsPoolTypes.every(ty => (!ty.includes(tk.coin[0]) || !ty.includes(tk.coin[1])) ));
             if (!isPoolNotExists) {
                 console.log(`Skip creating pool: ${tk.coin[0]}/${tk.coin[1]}`)
                 continue;
