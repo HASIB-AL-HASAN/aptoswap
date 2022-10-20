@@ -450,7 +450,8 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const BLUE_MOVE_PACKAGE_ADDR = "0xe4497a32bf4a9fd5601b27661aa0b933a923191bf403bd08669ab2468d43b379";
     const TORTUGA_FINANCE_PACKAGE_ADDR = {
         devnet: "0x12d75d5bde2535789041cd380e832038da873a4ba86348ca891d374e1d0e15ab",
-        testnet: "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27"
+        testnet: "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27",
+        mainnet: "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27"
     }[net.type as string];
 
     if (TORTUGA_FINANCE_PACKAGE_ADDR === undefined) {
@@ -488,10 +489,14 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
             withdrawFee: 10,
         },
         tokens: [
-            // APT/USDC
+            // APT/whUSDC
             { coin: [`0x1::aptos_coin::AptosCoin`, "0x5e156f1207d0ebfa19a9eeff00d62a282278fb8719f4fab3a586a0a2c0fffbea::coin::T"], direction: "Y" },
-            // APT/USDT
-            { coin: [`0x1::aptos_coin::AptosCoin`, "0xa2eda21a58856fda86451436513b867c97eecb4ba099da5775520e0f7492e852::coin::T"], direction: "Y" }
+            // APT/whUSDT
+            { coin: [`0x1::aptos_coin::AptosCoin`, "0xa2eda21a58856fda86451436513b867c97eecb4ba099da5775520e0f7492e852::coin::T"], direction: "Y" },
+            // APT/zUSDC
+            { coin: [`0x1::aptos_coin::AptosCoin`, "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa::asset::USDC"], direction: "Y" },
+            // APT/zUSDT
+            { coin: [`0x1::aptos_coin::AptosCoin`, "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa::asset::USDT"], direction: "Y" },
         ]
     }
 
@@ -569,36 +574,61 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
         mainnet: [primary]
     }[net.type as string]!;
 
+
     // Create pool
-    for (const poolConfig of poolsConfigs) {
-        const fee = poolConfig.fee;
-        const tokens = poolConfig.tokens;
-        for (const tk of tokens) {
+    for (let runType of ["dry-run", "create"]) {
 
-            const isPoolNotExists = (existsPoolTypes.every(ty => (!ty.includes(tk.coin[0]) || !ty.includes(tk.coin[1])) ));
-            if (!isPoolNotExists) {
-                console.log(`Skip creating pool: ${tk.coin[0]}/${tk.coin[1]}`)
-                continue;
+        const createPoolTypes: Array<string> = [];
+        
+        for (const poolConfig of poolsConfigs) {
+            const fee = poolConfig.fee;
+            const tokens = poolConfig.tokens;
+            for (const tk of tokens) {
+    
+                const isPoolNotExists = (existsPoolTypes.every(ty => (!ty.includes(tk.coin[0]) || !ty.includes(tk.coin[1])) ));
+                if (!isPoolNotExists) {
+                    console.log(`Skip creating pool: ${tk.coin[0]}/${tk.coin[1]}`)
+                    continue;
+                }
+
+                createPoolTypes.push(`${tk.coin[0]}/${tk.coin[1]}`);
+
+                // __i == 0: dry run
+                if (runType === "create") {
+                    await executeMoveCall(
+                        client, account,
+                        {
+                            function: `${packageAddr}::pool::create_pool`,
+                            type_arguments: [tk.coin[0], tk.coin[1]],
+                            arguments: [
+                                ["u8", tk.direction.toLowerCase() === "x" ? 200 : 201],
+                                fee.adminFee,
+                                fee.lpFee,
+                                fee.incentiveFee,
+                                fee.connectFee,
+                                fee.withdrawFee
+                            ]
+                        },
+                        false
+                    );
+                }
             }
-
-            await executeMoveCall(
-                client, account,
-                {
-                    function: `${packageAddr}::pool::create_pool`,
-                    type_arguments: [tk.coin[0], tk.coin[1]],
-                    arguments: [
-                        ["u8", tk.direction.toLowerCase() === "x" ? 200 : 201],
-                        fee.adminFee,
-                        fee.lpFee,
-                        fee.incentiveFee,
-                        fee.connectFee,
-                        fee.withdrawFee
-                    ]
-                },
-                false
-            );
         }
+
+        if (runType === "dry-run") {
+            console.log("======================================================");
+            for (const pt of createPoolTypes ) {
+                console.log(`Try create pool: ${pt}`);
+            }
+            console.log("======================================================");
+    
+            if (prompt("Confirm [yes | no]", "no").trim().toLowerCase() === "no") {
+                return;
+            }
+        }
+
     }
+
 }
 
 const actionFreezePool = async (args: string[], setups?: SetupType) => {
