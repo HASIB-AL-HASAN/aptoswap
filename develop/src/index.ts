@@ -446,7 +446,7 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const [account, client, faucetClient, net] = setups ?? (await setup());
 
     const HIPPO_TOKEN_PACKAGE_ADDR = "0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68";
-    const CELER_TOKEN_PACKAGE_ADDR = "0xbc954a7df993344c9fec9aaccdf96673a897025119fc38a8e0f637598496b47a";
+    const CELER_TOKEN_PACKAGE_ADDR = "0x8d87a65ba30e09357fa2edea2c80dbac296e5dec2b18287113500b902942929d";
     const BLUE_MOVE_PACKAGE_ADDR = "0xe4497a32bf4a9fd5601b27661aa0b933a923191bf403bd08669ab2468d43b379";
     const TORTUGA_FINANCE_PACKAGE_ADDR = {
         devnet: "0x12d75d5bde2535789041cd380e832038da873a4ba86348ca891d374e1d0e15ab",
@@ -502,10 +502,10 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
 
     const hippo = {
         fee: {
-            adminFee: 3,
-            lpFee: 26,
+            adminFee: 0,
+            lpFee: 30,
             incentiveFee: 0,
-            connectFee: 1,
+            connectFee: 0,
             withdrawFee: 10,
         },
         tokens: [
@@ -523,25 +523,22 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const celer = {
         fee: {
             adminFee: 0,
-            lpFee: 27,
-            incentiveFee: 3,
+            lpFee: 30,
+            incentiveFee: 0,
             connectFee: 0,
             withdrawFee: 10,
         },
         tokens: [
-            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_dai_coin::TestMintCoin`],  direction: "Y" },
-            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_usdc_coin::TestMintCoin`], direction: "Y" },
-            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::test_mint_usdt_coin::TestMintCoin`], direction: "Y" },
-            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_wbtc_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
-            { coin: [`${CELER_TOKEN_PACKAGE_ADDR}::test_mint_weth_coin::TestMintCoin`, "0x1::aptos_coin::AptosCoin"], direction: "Y" }
+            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::UsdcCoin`],  direction: "Y" },
+            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::UsdtCoin`],  direction: "Y" }
         ]
     }
 
     const tortuga = {
         fee: {
-            adminFee: 1,
+            adminFee: 0,
             lpFee: 4,
-            incentiveFee: 1,
+            incentiveFee: 0,
             connectFee: 0,
             withdrawFee: 10,
         },
@@ -553,8 +550,8 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const bluemove = {
         fee: {
             adminFee: 0,
-            lpFee: 27,
-            incentiveFee: 3,
+            lpFee: 30,
+            incentiveFee: 0,
             connectFee: 0,
             withdrawFee: 10,
         },
@@ -569,9 +566,9 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
 
     // Get the pool configs
     const poolsConfigs = {
-        devnet: [primary, aptoswap, hippo, celer, tortuga, bluemove],
-        testnet: [primary, aptoswap, hippo, celer, tortuga, bluemove],
-        mainnet: [primary]
+        devnet: [primary, aptoswap, hippo, tortuga, bluemove],
+        testnet: [primary, aptoswap, hippo, tortuga, bluemove],
+        mainnet: [primary, celer]
     }[net.type as string]!;
 
 
