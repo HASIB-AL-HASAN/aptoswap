@@ -468,10 +468,10 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
 
     const aptoswap = {
         fee: {
-            adminFee: 3,
-            lpFee: 26,
-            incentiveFee: 0,
-            connectFee: 1,
+            adminFee: 0,
+            lpFee: 27,
+            incentiveFee: 3,
+            connectFee: 0,
             withdrawFee: 10,
         },
         tokens: [
@@ -483,8 +483,8 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const primary = {
         fee: {
             adminFee: 0,
-            lpFee: 30,
-            incentiveFee: 0,
+            lpFee: 27,
+            incentiveFee: 3,
             connectFee: 0,
             withdrawFee: 10,
         },
@@ -503,8 +503,8 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const hippo = {
         fee: {
             adminFee: 0,
-            lpFee: 30,
-            incentiveFee: 0,
+            lpFee: 27,
+            incentiveFee: 3,
             connectFee: 0,
             withdrawFee: 10,
         },
@@ -523,8 +523,8 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const celer = {
         fee: {
             adminFee: 0,
-            lpFee: 30,
-            incentiveFee: 0,
+            lpFee: 27,
+            incentiveFee: 3,
             connectFee: 0,
             withdrawFee: 10,
         },
@@ -550,8 +550,8 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const bluemove = {
         fee: {
             adminFee: 0,
-            lpFee: 30,
-            incentiveFee: 0,
+            lpFee: 27,
+            incentiveFee: 3,
             connectFee: 0,
             withdrawFee: 10,
         },
