@@ -265,8 +265,8 @@ module Aptoswap::pool {
     ///    2. When _direction1 is ERouteSwapDirectionReverse, it will use `Pool<Y, X>` and `swap_y_to_x` to do the swapping.
     ///    3. When _direction2 is ERouteSwapDirectionForward, it will use `Pool<Y, Z>` and `swap_x_to_y` to do the swapping
     ///    4. When _direction2 is ERouteSwapDirectionReverse, it will use `Pool<Z, Y>` and `swap_y_to_x` to do the swapping.
-    public entry fun route_swap<X, Y, Z>(_user: &signer, _in_amount: u64, _min_out_amount: u64, _direction1: u8, _direction2: u8) {
-        assert!(false, ENoImplement);
+    public entry fun route_swap<X, Y, Z>(user: &signer, in_amount: u64, min_out_amount: u64, direction1: u8, direction2: u8) acquires Pool, Bank {
+        route_swap_impl<X, Y, Z>(user, in_amount, min_out_amount, direction1, direction2, timestamp::now_seconds());
     }
 
     public entry fun remove_liquidity<X, Y>(user: &signer, lsp_amount: u64) acquires Pool, LSPCapabilities, Bank {
@@ -613,7 +613,7 @@ module Aptoswap::pool {
         out_coin
     }
 
-    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, current_time: u64) acquires Pool, Bank {
+    public(friend) fun swap_x_to_y_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, current_time: u64): u64 acquires Pool, Bank {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -623,9 +623,12 @@ module Aptoswap::pool {
 
         let in_coin = coin::withdraw<X>(user, in_amount);
         let out_coin = swap_x_to_y_direct_impl<X, Y>(in_coin, current_time);
-        assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
+        let out_coin_value = coin::value(&out_coin);
+        assert!(out_coin_value >= min_out_amount, ESlippageLimit);
 
         coin::deposit(user_addr, out_coin);
+
+        out_coin_value
     }
 
     public(friend) fun swap_y_to_x_direct_impl<X, Y>(in_coin: coin::Coin<Y>, current_time: u64): coin::Coin<X> acquires Pool, Bank {
@@ -715,7 +718,7 @@ module Aptoswap::pool {
         out_coin
     }
 
-    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, current_time: u64) acquires Pool, Bank {
+    public(friend) fun swap_y_to_x_impl<X, Y>(user: &signer, in_amount: u64, min_out_amount: u64, current_time: u64): u64 acquires Pool, Bank {
         let user_addr = signer::address_of(user);
 
         assert!(in_amount > 0, EInvalidParameter);
@@ -725,9 +728,47 @@ module Aptoswap::pool {
 
         let in_coin = coin::withdraw<Y>(user, in_amount);
         let out_coin = swap_y_to_x_direct_impl<X, Y>(in_coin, current_time);
-        assert!(coin::value(&out_coin) >= min_out_amount, ESlippageLimit);
+        let out_coin_value = coin::value(&out_coin);
+        assert!(out_coin_value >= min_out_amount, ESlippageLimit);
 
         coin::deposit(user_addr, out_coin);
+
+        out_coin_value
+    }
+
+    public(friend) fun route_swap_impl<X, Y, Z>(user: &signer, in_amount: u64, min_out_amount: u64, direction1: u8, direction2: u8, current_time: u64): u64 acquires Pool, Bank {
+        assert!(in_amount > 0, EInvalidParameter);
+        assert!(direction1 == ERouteSwapDirectionForward || direction1 == ERouteSwapDirectionReverse, EInvalidParameter);
+        assert!(direction2 == ERouteSwapDirectionForward || direction2 == ERouteSwapDirectionReverse, EInvalidParameter);
+
+        let user_addr = signer::address_of(user);
+
+        register_coin_if_needed<X>(user);
+        register_coin_if_needed<Y>(user);
+        register_coin_if_needed<Z>(user);
+
+        assert!(in_amount <= coin::balance<X>(user_addr), ENotEnoughBalance);
+
+        let in_coin = coin::withdraw<X>(user, in_amount);
+
+        let route_coin = if (direction1 == ERouteSwapDirectionForward) { 
+            swap_x_to_y_direct_impl<X, Y>(in_coin, current_time)
+        } else { 
+            swap_y_to_x_direct_impl<Y, X>(in_coin, current_time)
+        };
+
+        let out_coin = if (direction2 == ERouteSwapDirectionForward) {
+            swap_x_to_y_direct_impl<Y, Z>(route_coin, current_time)
+        } else {
+            swap_y_to_x_direct_impl<Z, Y>(route_coin, current_time)
+        };
+
+        let out_coin_value = coin::value(&out_coin);
+        assert!(out_coin_value >= min_out_amount, ESlippageLimit);
+
+        coin::deposit(user_addr, out_coin);
+
+        out_coin_value
     }
 
     public(friend) fun add_liquidity_impl<X, Y>(user: &signer, x_added: u64, y_added: u64) acquires Pool, LSPCapabilities {
