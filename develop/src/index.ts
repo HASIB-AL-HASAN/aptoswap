@@ -445,9 +445,10 @@ const autoFund = async (account: AptosAccount, client: AptosClient, faucetClient
 const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const [account, client, faucetClient, net] = setups ?? (await setup());
 
-    const HIPPO_TOKEN_PACKAGE_ADDR = "0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68";
     const CELER_TOKEN_PACKAGE_ADDR = "0x8d87a65ba30e09357fa2edea2c80dbac296e5dec2b18287113500b902942929d";
     const BLUE_MOVE_PACKAGE_ADDR = "0xe4497a32bf4a9fd5601b27661aa0b933a923191bf403bd08669ab2468d43b379";
+    const LAYER_ZERO_PACKAGE_ADDR = "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa";
+    const MOJO_PACKAGE_ADDR = "0x881ac202b1f1e6ad4efcff7a1d0579411533f2502417a19211cfc49751ddb5f4";
     const TORTUGA_FINANCE_PACKAGE_ADDR = {
         devnet: "0x12d75d5bde2535789041cd380e832038da873a4ba86348ca891d374e1d0e15ab",
         testnet: "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27",
@@ -466,14 +467,37 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const currentBalanceShow = Number(currentBalance) / (10 ** 8);
     console.log(`[INFO] Current balance: ${currentBalance}(${currentBalanceShow})`);
 
+    const generalPoolFee = {
+        adminFee: 0,
+        lpFee: 27,
+        incentiveFee: 3,
+        connectFee: 0,
+        withdrawFee: 10,
+    };
+
+    const coins = {
+        aptos: "0x1::aptos_coin::AptosCoin",
+        usdc: "0x5e156f1207d0ebfa19a9eeff00d62a282278fb8719f4fab3a586a0a2c0fffbea::coin::T",
+        usdt: "0xa2eda21a58856fda86451436513b867c97eecb4ba099da5775520e0f7492e852::coin::T",
+        wbtc: "0xae478ff7d83ed072dbc5e264250e67ef58f57c99d89b447efd8a0a2e8b2be76e::coin::T",
+        weth: "0xcc8a89c8dce9693d354449f1f73e60e14e347417854f029db5bc8e7454008abb::coin::T",
+        zUsdc: `${LAYER_ZERO_PACKAGE_ADDR}::asset::USDC`,
+        zUsdt: `${LAYER_ZERO_PACKAGE_ADDR}::asset::USDT`,
+        zWeth: `${LAYER_ZERO_PACKAGE_ADDR}::asset::WETH`,
+        ceUsdc: `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::UsdcCoin`,
+        ceUsdt: `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::UsdtCoin`,
+        ceDai: `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::DaiCoin`,
+        ceWeth: `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::WethCoin`,
+        ceWbtc: `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::WbtcCoin`,
+        ceBnb: `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::BnbCoin`,
+        ceBusd: `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::BusdCoin`,
+        mojo: `${MOJO_PACKAGE_ADDR}::coin::MOJO`,
+    };
+
+    const coinNameMap = new Map<string, string>(Object.entries(coins).map(([a, b]) => [b, a]));
+
     const aptoswap = {
-        fee: {
-            adminFee: 0,
-            lpFee: 27,
-            incentiveFee: 3,
-            connectFee: 0,
-            withdrawFee: 10,
-        },
+        fee: generalPoolFee,
         tokens: [
             { coin: [`${packageAddr}::pool::TestToken`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
             { coin: [`${packageAddr}::pool::Token`, "0x1::aptos_coin::AptosCoin"], direction: "Y" }
@@ -481,42 +505,57 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     }
 
     const primary = {
-        fee: {
-            adminFee: 0,
-            lpFee: 27,
-            incentiveFee: 3,
-            connectFee: 0,
-            withdrawFee: 10,
-        },
+        fee: generalPoolFee,
         tokens: [
-            // APT/whUSDC
-            { coin: [`0x1::aptos_coin::AptosCoin`, "0x5e156f1207d0ebfa19a9eeff00d62a282278fb8719f4fab3a586a0a2c0fffbea::coin::T"], direction: "Y" },
-            // APT/whUSDT
-            { coin: [`0x1::aptos_coin::AptosCoin`, "0xa2eda21a58856fda86451436513b867c97eecb4ba099da5775520e0f7492e852::coin::T"], direction: "Y" },
-            // APT/zUSDC
-            { coin: [`0x1::aptos_coin::AptosCoin`, "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa::asset::USDC"], direction: "Y" },
-            // APT/zUSDT
-            { coin: [`0x1::aptos_coin::AptosCoin`, "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa::asset::USDT"], direction: "Y" },
+            { coin: [coins.aptos, coins.usdc], direction: "Y" },
+            { coin: [coins.aptos, coins.usdt], direction: "Y" },
+            { coin: [coins.aptos, coins.zUsdc], direction: "Y" },
+            { coin: [coins.aptos, coins.zUsdt], direction: "Y" },
         ]
     }
 
-    const hippo = {
-        fee: {
-            adminFee: 0,
-            lpFee: 27,
-            incentiveFee: 3,
-            connectFee: 0,
-            withdrawFee: 10,
-        },
+    const layerZero = {
+        fee: generalPoolFee,
         tokens: [
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetDAI`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDT`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [ coins.zWeth, coins.zUsdc ], direction: "Y" },
+            { coin: [ coins.zWeth, coins.zUsdt ], direction: "Y" },
+            { coin: [ coins.zWeth, coins.aptos ], direction: "Y" }
+        ]
+    };
 
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetDAI`], direction: "Y" },
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDC`], direction: "Y" },
-            { coin: [`${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetBTC`, `${HIPPO_TOKEN_PACKAGE_ADDR}::devnet_coins::DevnetUSDT`], direction: "Y" },
+    const wormhole = {
+        fee: generalPoolFee,
+        tokens: [
+            { coin: [ coins.wbtc, coins.usdc ], direction: "Y" },
+            { coin: [ coins.wbtc, coins.usdt ], direction: "Y" },
+            { coin: [ coins.wbtc, coins.aptos ], direction: "Y" },
+            { coin: [ coins.weth, coins.usdc ], direction: "Y" },
+            { coin: [ coins.weth, coins.usdt ], direction: "Y" },
+            { coin: [ coins.weth, coins.aptos ], direction: "Y" }
+        ]
+    };
+
+    const mojo = {
+        fee: generalPoolFee,
+        tokens: [
+            { coin: [ coins.mojo, coins.usdc ], direction: "Y" },
+            { coin: [ coins.mojo, coins.usdt ], direction: "Y" },
+            { coin: [ coins.mojo, coins.aptos ], direction: "Y" },
+            { coin: [ coins.mojo, coins.zUsdc ], direction: "Y" },
+            { coin: [ coins.mojo, coins.zUsdt ], direction: "Y" },
+        ]
+    }
+
+    const hippoTest = {
+        fee: generalPoolFee,
+        tokens: [
+            { coin: [`${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetBTC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetDAI`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetUSDC`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetUSDT`, "0x1::aptos_coin::AptosCoin"], direction: "Y" },
+            { coin: [`${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetBTC`, `${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetDAI`], direction: "Y" },
+            { coin: [`${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetBTC`, `${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetUSDC`], direction: "Y" },
+            { coin: [`${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetBTC`, `${0x498d8926f16eb9ca90cab1b3a26aa6f97a080b3fcbe6e83ae150b7243a00fb68}::devnet_coins::DevnetUSDT`], direction: "Y" },
         ]
     }
 
@@ -529,8 +568,8 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
             withdrawFee: 10,
         },
         tokens: [
-            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::UsdcCoin`],  direction: "Y" },
-            { coin: ["0x1::aptos_coin::AptosCoin", `${CELER_TOKEN_PACKAGE_ADDR}::celer_coin_manager::UsdtCoin`],  direction: "Y" }
+            { coin: [coins.aptos, coins.ceUsdc],  direction: "Y" },
+            { coin: [coins.aptos, coins.ceUsdt],  direction: "Y" }
         ]
     }
 
@@ -566,9 +605,9 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
 
     // Get the pool configs
     const poolsConfigs = {
-        devnet: [primary, aptoswap, hippo, tortuga, bluemove],
-        testnet: [primary, aptoswap, hippo, tortuga, bluemove],
-        mainnet: [primary, celer]
+        devnet: [primary, aptoswap, hippoTest, tortuga, bluemove],
+        testnet: [primary, aptoswap, hippoTest, tortuga, bluemove],
+        mainnet: [primary, celer, wormhole, layerZero]
     }[net.type as string]!;
 
 
@@ -588,7 +627,9 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
                     continue;
                 }
 
-                createPoolTypes.push(`${tk.coin[0]}/${tk.coin[1]}`);
+                const name0 = coinNameMap.get(tk.coin[0])!;
+                const name1 = coinNameMap.get(tk.coin[1])!;
+                createPoolTypes.push(`${name0}/${name1}(${tk.coin[0]}/${tk.coin[1]})`);
 
                 // __i == 0: dry run
                 if (runType === "create") {
