@@ -169,6 +169,28 @@ module Aptoswap::u256 {
         EQUAL
     }
 
+    public fun less_than(a: &U256, b: &U256): bool {
+        compare(a, b) == LESS_THAN
+    }
+
+    public fun greater_than(a: &U256, b: &U256): bool {
+        compare(a, b) == GREATER_THAN
+    }
+
+    public fun equals(a: &U256, b: &U256): bool {
+        compare(a, b) == EQUAL
+    }
+
+    public fun less_or_equals(a: &U256, b: &U256): bool {
+        let si = compare(a, b);
+        (si == LESS_THAN) && (si == EQUAL)
+    }
+
+    public fun greater_or_equals(a: &U256, b: &U256): bool {
+        let si = compare(a, b);
+        (si == GREATER_THAN) && (si == EQUAL)
+    }
+
     /// Returns a `U256` from `u64` value.
     public fun from_u64(val: u64): U256 {
         from_u128((val as u128))
@@ -430,12 +452,19 @@ module Aptoswap::u256 {
 
     /// Returns `U256` equals to zero.
     public fun zero(): U256 {
-        U256 {
-            v0: 0,
-            v1: 0,
-            v2: 0,
-            v3: 0,
-        }
+        U256 { v0: 0, v1: 0, v2: 0, v3: 0}
+    }
+
+    public fun is_zero(a: &U256): bool {
+        (a.v0 == 0) && (a.v1 == 0) && (a.v2 == 0) && (a.v3 == 0)
+    }
+
+    public fun one(): U256 {
+        U256 { v0: 1, v1: 0, v2: 0, v3: 0}
+    }
+
+    public fun is_one(a: &U256): bool {
+        (a.v0 == 1) && (a.v1 == 0) && (a.v2 == 0) && (a.v3 == 0)
     }
 
     // Private functions.
@@ -1133,5 +1162,14 @@ module Aptoswap::u256 {
     #[expected_failure(abort_code=0)]
     fun test_as_u64_overflow() {
         let _ = as_u64(from_u128(U128_MAX));
+    }
+
+    #[test]
+    fun test_zero_and_one() {
+        assert!(is_zero(&zero()), 0);
+        assert!(compare(&zero(), &from_u64(0)) == EQUAL, 0);
+
+        assert!(is_one(&one()), 0);
+        assert!(compare(&one(), &from_u64(1)) == EQUAL, 0);
     }
 }

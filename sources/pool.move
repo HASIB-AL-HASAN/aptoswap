@@ -11,6 +11,10 @@ module Aptoswap::pool {
     use aptos_framework::timestamp;
 
     use Aptoswap::utils::{ WeeklySmaU128, create_sma128, add_sma128, pow10 };
+    use Aptoswap::u256::{ 
+        U256, add, sub, mul, div, from_u64,from_u128, as_u64, as_u128, is_zero, zero, one,
+        compare, equals, less_or_equals, greater_or_equals, greater_than, less_than
+    };
 
     #[test_only]
     friend Aptoswap::pool_test;
@@ -74,6 +78,10 @@ module Aptoswap::pool {
     const TOTAL_TRADE_24H_INTERVAL_SEC: u64 = 86400;
     /// The interval between captuing the bank amount
     const BANK_AMOUNT_SNAPSHOT_INTERVAL_SEC: u64 = 3600 * 6;
+
+    const STABLESWAP_N_COINS: u64 = 2;
+    const STABLESWAP_MIN_AMP: u64 = 1;
+    const STABLESWAP_MAX_AMP: u64 = 1000000;
 
     struct PoolCreateEvent has drop, store {
         index: u64
@@ -1154,4 +1162,66 @@ module Aptoswap::pool {
     }
 
     // ============================================= Utilities =============================================
+
+
+    // ============================================= Stable Swap =============================================
+
+    fun ss_compute_next_d(amp: U256, d_init: U256, d_prod: U256, sum_x: U256): U256 {
+        let n = from_u64(STABLESWAP_N_COINS);
+        let ann = mul(amp, n); // ann = amp * N_COINS
+        let leverage = mul(sum_x, ann); // leverage = sum_x * ann
+        let numerator = mul(
+            d_init,
+            add(mul(d_prod, n), leverage)
+        );
+        let denominator = add(
+            mul(
+                d_init,
+                sub(ann, one())
+            ),
+            mul(d_prod, add(n, one()))
+        );
+
+        div(numerator, denominator)
+    }
+
+    fun ss_compute_d(amount_a: U256, amount_b: U256, amp: U256): U256 {
+        let sum_x = add(amount_a, amount_b);
+        if (is_zero(&sum_x)) {
+            return zero()
+        };
+
+        let amount_a_times_coins = mul(amount_a, from_u64(STABLESWAP_N_COINS));
+        let amount_b_times_coins = mul(amount_b, from_u64(STABLESWAP_N_COINS));
+
+        let d_prev;
+        let d = sum_x;
+
+        let counter = 0;
+        while (counter < 256) {
+            let d_prod = d;
+            d_prod = div(mul(d_prod, d), amount_a_times_coins);
+            d_prod = div(mul(d_prod, d), amount_b_times_coins);
+            d_prev = d;
+            d = ss_compute_next_d(amp, d, d_prod, sum_x);
+
+            if (greater_than(&d, &d_prev)) {
+                // d - d_prev <= 1
+                if (less_or_equals(&sub(d, d_prev), &one())) {
+                    break
+                }
+            } 
+            else {
+                // d_prev - d <= 1
+                if (less_or_equals(&sub(d_prev, d), &one())) {
+                    break
+                }
+            };
+
+            counter = counter + 1;
+        };
+
+        d
+    }
+    // ============================================= Stable Swap =============================================
 }
