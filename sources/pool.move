@@ -1223,5 +1223,48 @@ module Aptoswap::pool {
 
         d
     }
+
+    fun ss_compute_y(x: U256, d: U256, amp: U256): U256 {
+        let n = from_u64(STABLESWAP_N_COINS);
+        let ann = mul(amp, n);
+
+        // sum' = prod' = x
+        // c =  D ** (n + 1) / (n ** (2 * n) * prod' * A)
+        let c = div(mul(d, d), mul(x, n));
+        let c = div(mul(c, d), mul(ann, n));
+        // b = sum' - (A*n**n - 1) * D / (A * n**n)
+        let b = add(div(d, ann), x);
+
+        // Solve for y by approximating: y**2 + b*y = c
+        let y_prev: U256;
+        let y = d;
+
+        let counter = 0;
+        while (counter < 256) {
+            y_prev = y;
+            // y = (y * y + c) / (2 * y + b - d);
+            let y_numerator = add(mul(y, y), c);
+            let y_denominator = sub(add(mul(y, from_u64(2)), b), d);
+            y = div(y_numerator, y_denominator);
+            if (greater_than(&y, &y_prev)) {
+                if (less_or_equals(&sub(y, y_prev), &one())) {
+                    break
+                }
+            } else {
+                if (less_or_equals(&sub(y_prev, y), &one())) {
+                    break
+                }
+            };
+
+            counter = counter + 1;
+        };
+
+        y
+    }
+
+    // fun ss_swap_to(source_amount: U256, swap_source_amount: U256, swap_destination_amount: U256): U256 {
+        
+    // }
+    
     // ============================================= Stable Swap =============================================
 }
