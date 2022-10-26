@@ -569,7 +569,27 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
         },
         tokens: [
             { coin: [coins.aptos, coins.ceUsdc],  direction: "Y" },
-            { coin: [coins.aptos, coins.ceUsdt],  direction: "Y" }
+            { coin: [coins.aptos, coins.ceUsdt],  direction: "Y" },
+            { coin: [coins.aptos, coins.ceBusd],  direction: "X" },
+            { coin: [coins.aptos, coins.ceDai],  direction: "X" },
+
+            { coin: [coins.ceWbtc, coins.ceUsdc], direction: "Y" },
+            { coin: [coins.ceWbtc, coins.ceUsdt], direction: "Y" },
+            { coin: [coins.ceWbtc, coins.ceDai],  direction: "Y" },
+            { coin: [coins.ceWbtc, coins.ceBusd], direction: "Y" },
+            { coin: [coins.ceWbtc, coins.aptos],  direction: "Y" },
+
+            { coin: [coins.ceWeth, coins.ceUsdc],  direction: "Y" },
+            { coin: [coins.ceWeth, coins.ceUsdt],  direction: "Y" },
+            { coin: [coins.ceWeth, coins.ceDai],  direction: "Y" },
+            { coin: [coins.ceWbtc, coins.ceBusd],  direction: "Y" },
+            { coin: [coins.ceWeth, coins.aptos],  direction: "Y" },
+
+            { coin: [coins.ceBnb, coins.ceUsdc],  direction: "Y" },
+            { coin: [coins.ceBnb, coins.ceUsdt],  direction: "Y" },
+            { coin: [coins.ceBnb, coins.ceDai],  direction: "Y" },
+            { coin: [coins.ceBnb, coins.ceBusd],  direction: "Y" },
+            { coin: [coins.ceBnb, coins.aptos],  direction: "Y" },
         ]
     }
 
@@ -607,7 +627,7 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const poolsConfigs = {
         devnet: [primary, aptoswap, hippoTest, tortuga, bluemove],
         testnet: [primary, aptoswap, hippoTest, tortuga, bluemove],
-        mainnet: [primary, celer, wormhole, layerZero]
+        mainnet: [primary, wormhole, layerZero, celer]
     }[net.type as string]!;
 
 
