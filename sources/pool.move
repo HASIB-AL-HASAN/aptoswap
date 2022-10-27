@@ -12,8 +12,8 @@ module Aptoswap::pool {
 
     use Aptoswap::utils::{ WeeklySmaU128, create_sma128, add_sma128, pow10 };
     use Aptoswap::u256::{ 
-        U256, add, sub, mul, div, from_u64,from_u128, as_u64, as_u128, is_zero, zero, one,
-        compare, equals, less_or_equals, greater_or_equals, greater_than, less_than
+        U256, add, sub, mul, div, from_u64, is_zero, zero, one,
+        less_or_equals, greater_or_equals, abs_sub
     };
 
     #[test_only]
@@ -1166,7 +1166,7 @@ module Aptoswap::pool {
 
     // ============================================= Stable Swap =============================================
 
-    fun ss_compute_next_d(amp: U256, d_init: U256, d_prod: U256, sum_x: U256): U256 {
+    public fun ss_compute_next_d(amp: U256, d_init: U256, d_prod: U256, sum_x: U256): U256 {
         let n = from_u64(STABLESWAP_N_COINS);
         let ann = mul(amp, n); // ann = amp * N_COINS
         let leverage = mul(sum_x, ann); // leverage = sum_x * ann
@@ -1185,7 +1185,7 @@ module Aptoswap::pool {
         div(numerator, denominator)
     }
 
-    fun ss_compute_d(amount_a: U256, amount_b: U256, amp: U256): U256 {
+    public fun ss_compute_d(amount_a: U256, amount_b: U256, amp: U256): U256 {
         let sum_x = add(amount_a, amount_b);
         if (is_zero(&sum_x)) {
             return zero()
@@ -1205,17 +1205,8 @@ module Aptoswap::pool {
             d_prev = d;
             d = ss_compute_next_d(amp, d, d_prod, sum_x);
 
-            if (greater_than(&d, &d_prev)) {
-                // d - d_prev <= 1
-                if (less_or_equals(&sub(d, d_prev), &one())) {
-                    break
-                }
-            } 
-            else {
-                // d_prev - d <= 1
-                if (less_or_equals(&sub(d_prev, d), &one())) {
-                    break
-                }
+            if (less_or_equals(&abs_sub(d, d_prev), &one())) {
+                break
             };
 
             counter = counter + 1;
@@ -1224,7 +1215,7 @@ module Aptoswap::pool {
         d
     }
 
-    fun ss_compute_y(x: U256, d: U256, amp: U256): U256 {
+    public fun ss_compute_y(x: U256, d: U256, amp: U256): U256 {
         let n = from_u64(STABLESWAP_N_COINS);
         let ann = mul(amp, n);
 
@@ -1246,14 +1237,9 @@ module Aptoswap::pool {
             let y_numerator = add(mul(y, y), c);
             let y_denominator = sub(add(mul(y, from_u64(2)), b), d);
             y = div(y_numerator, y_denominator);
-            if (greater_than(&y, &y_prev)) {
-                if (less_or_equals(&sub(y, y_prev), &one())) {
-                    break
-                }
-            } else {
-                if (less_or_equals(&sub(y_prev, y), &one())) {
-                    break
-                }
+
+            if (less_or_equals(&abs_sub(y, y_prev), &one())) {
+                break
             };
 
             counter = counter + 1;
@@ -1262,9 +1248,94 @@ module Aptoswap::pool {
         y
     }
 
-    // fun ss_swap_to(source_amount: U256, swap_source_amount: U256, swap_destination_amount: U256): U256 {
+    public fun ss_swap_to(source_amount: U256, swap_source_amount: U256, swap_destination_amount: U256, amp: U256): U256 {
+        let (dy, d_0) = ss_swap_to_internal(source_amount, swap_source_amount, swap_destination_amount, amp);
+        let d_1 = ss_compute_d(
+            add(source_amount, swap_source_amount),
+            add(swap_destination_amount, dy),
+            amp
+        );
+        assert!(greater_or_equals(&d_1, &d_0), EComputationError);
+        dy
+    }
+
+    public fun ss_swap_to_internal(source_amount: U256, swap_source_amount: U256, swap_destination_amount: U256, amp: U256): (U256, U256) {
+        // Returns the dy and d with previous amount
+        let d = ss_compute_d(swap_source_amount, swap_destination_amount, amp);
+        let y = ss_compute_y(
+            add(swap_source_amount, source_amount),
+            d,
+            amp
+        );
+        // https://github.com/curvefi/curve-contract/blob/b0bbf77f8f93c9c5f4e415bce9cd71f0cdee960e/contracts/pool-templates/base/SwapTemplateBase.vy#L466
+        let dy = sub(sub(swap_destination_amount, y), one());
+        (dy, d)
+    }
+
+    public fun ss_compute_mint_amount_for_deposit(
+        deposit_amount_a: U256, 
+        deposit_amount_b: U256, 
+        swap_amount_a: U256, 
+        swap_amount_b: U256,
+        pool_token_supply: U256,
+        amp: U256
+    ): U256 {
+        // Initial invariant
+        let d_0 = ss_compute_d(swap_amount_a, swap_amount_b, amp);
         
-    // }
-    
+        let new_balances_0 = add(swap_amount_a, deposit_amount_a);
+        let new_balances_1 = add(swap_amount_b, deposit_amount_b);
+        
+        // Invariant after change
+        let d_1 = ss_compute_d(new_balances_0, new_balances_1, amp);
+
+        if (less_or_equals(&d_1, &d_0)) {
+            zero()
+        }
+        else {
+            // d1 / (p + dp) >= d0 / p
+            // ==> d1 * p >= d0 * (p + dp)
+            // ==> (d1 - d0) p >= d0 dp
+            // ==> dp <= (d1 - d0) p / d0
+            // ==> dp = Floor[(d1 - d0) p / d0] <= (d1 - d0) p / d0
+            let amount = div(mul(pool_token_supply, sub(d_1, d_0)), d_0);
+            ss_validate_lsp_value_increase(d_0, d_1, pool_token_supply, add(pool_token_supply, amount));
+
+            amount
+        }
+    }
+
+    public fun ss_compute_withdraw_one(
+        pool_token_amount: U256,
+        pool_token_supply: U256,
+        swap_base_amount: U256,  // Same denomination of token to be withdrawn
+        swap_quote_amount: U256, // Counter denomination of token to be withdrawn
+        amp: U256
+    ): U256 {
+
+        let d_0 = ss_compute_d(swap_base_amount, swap_quote_amount, amp);
+        let d_1 = sub(d_0, div(mul(pool_token_amount, d_0), pool_token_supply));
+        let new_swap_base_amount = ss_compute_y(swap_quote_amount, d_1, amp);
+
+        let dy = sub(
+            swap_base_amount,
+            add(new_swap_base_amount, one())
+        );
+
+        ss_validate_lsp_value_increase(d_0, d_1, pool_token_supply, sub(pool_token_supply, pool_token_amount));
+
+        dy
+    }
+
+    public fun ss_validate_lsp_value_increase(d_0: U256, d_1: U256, lsp_0: U256, lsp_1: U256) {
+        // Validate the d per lsp not decreased
+        assert!(
+            greater_or_equals(
+                &div(d_1, lsp_1),
+                &div(d_0, lsp_0)
+            ),
+            EComputationError
+        );
+    }
     // ============================================= Stable Swap =============================================
 }
