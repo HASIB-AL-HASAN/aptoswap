@@ -538,9 +538,9 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const mojo = {
         fee: generalPoolFee,
         tokens: [
+            { coin: [ coins.mojo, coins.aptos ], direction: "Y" },
             { coin: [ coins.mojo, coins.usdc ], direction: "Y" },
             { coin: [ coins.mojo, coins.usdt ], direction: "Y" },
-            { coin: [ coins.mojo, coins.aptos ], direction: "Y" },
             { coin: [ coins.mojo, coins.zUsdc ], direction: "Y" },
             { coin: [ coins.mojo, coins.zUsdt ], direction: "Y" },
         ]
@@ -627,7 +627,7 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const poolsConfigs = {
         devnet: [primary, aptoswap, hippoTest, tortuga, bluemove],
         testnet: [primary, aptoswap, hippoTest, tortuga, bluemove],
-        mainnet: [primary, wormhole, layerZero, celer]
+        mainnet: [primary, wormhole, layerZero, celer, mojo]
     }[net.type as string]!;
 
 
