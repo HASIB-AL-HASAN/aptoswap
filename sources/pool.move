@@ -1327,6 +1327,29 @@ module Aptoswap::pool {
         dy
     }
 
+    public fun ss_compute_withdraw(
+        pool_token_amount: U256,
+        pool_token_supply: U256,
+        swap_base_amount: U256,
+        swap_quote_amount: U256,
+        amp: U256
+    ): (U256, U256) {
+        // Note: it could be simple without validation but we currently validate for every withdraw
+        let d_0 = ss_compute_d(swap_base_amount, swap_quote_amount, amp);
+
+        let swap_base_removed = div(mul(pool_token_amount, swap_base_amount), pool_token_supply);
+        let swap_quote_removed = div(mul(pool_token_amount, swap_quote_amount), pool_token_supply);
+
+        let new_swap_base_amount = sub(swap_base_amount, swap_base_removed);
+        let new_swap_quote_amount = sub(swap_quote_amount, swap_quote_removed);
+
+        let d_1 = ss_compute_d(new_swap_base_amount, new_swap_quote_amount, amp);
+
+        ss_validate_lsp_value_increase(d_0, d_1, pool_token_supply, sub(pool_token_supply, pool_token_amount));
+
+        (swap_base_removed, swap_quote_removed)
+    }
+
     public fun ss_validate_lsp_value_increase(d_0: U256, d_1: U256, lsp_0: U256, lsp_1: U256) {
         // Validate the d per lsp not decreased
         assert!(
