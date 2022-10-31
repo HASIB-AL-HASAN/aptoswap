@@ -10,9 +10,9 @@ module Aptoswap::pool {
     use aptos_framework::account;
     use aptos_framework::timestamp;
 
-    use Aptoswap::utils::{ WeeklySmaU128, create_sma128, add_sma128, pow10 };
+    use Aptoswap::utils::{ WeeklySmaU128, create_sma128, pow10 };
     use Aptoswap::u256::{ 
-        U256, add, sub, mul, div, from_u64, is_zero, zero, one,
+        U256, add, sub, mul, div, from_u64, as_u64, is_zero, zero, one,
         less_or_equals, greater_or_equals, abs_sub
     };
 
@@ -20,6 +20,8 @@ module Aptoswap::pool {
     friend Aptoswap::pool_test;
 
     const NUMBER_1E8: u128 = 100000000;
+    const NUMBER_1E9: u128 = 1000000000;
+    const NUMBER_1E10: u128 = 10000000000;
 
     const ERouteSwapDirectionForward: u8 = 0;
     const ERouteSwapDirectionReverse: u8 = 1;
@@ -543,8 +545,6 @@ module Aptoswap::pool {
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         assert!(pool.freeze == false, EPoolFreeze);
 
-        let k_before = compute_k(pool);
-
         let (x_reserve_amt, y_reserve_amt, _) = get_amounts(pool);
         assert!(x_reserve_amt > 0 && y_reserve_amt > 0, EReservesEmpty);
 
@@ -555,11 +555,11 @@ module Aptoswap::pool {
         let fee_coin = collect_fee(&mut in_coin, get_total_lp_fee(pool));
 
         // Get the output amount
-        let output_amount = compute_amount(
-            coin::value(&in_coin),
-            x_reserve_amt,
-            y_reserve_amt,
-        );
+        let output_amount = if (pool.pool_type == EPoolTypeV2) {
+            compute_amount(coin::value(&in_coin), x_reserve_amt, y_reserve_amt)
+        } else {
+            compute_amount_stable(coin::value(&in_coin), x_reserve_amt, y_reserve_amt, pool.stable_x_scale, pool.stable_y_scale, pool.stable_amp)
+        };
 
         // 2. pool.x = pool.x + x_remain_amt + x_lp
         coin::merge(&mut pool.x, in_coin);
@@ -570,9 +570,6 @@ module Aptoswap::pool {
         if (pool.fee_direction == EFeeDirectionY) {
             collect_admin_fee(&mut out_coin, get_total_admin_fee(pool), current_time);
         };
-
-        let k_after = compute_k(pool);  
-        assert!(k_after >= k_before, EComputationError);
 
         // Emit swap event
         event::emit_event(
@@ -612,10 +609,6 @@ module Aptoswap::pool {
                     }
                 );
             };
-
-            // Add ksp_e8 sma average
-            let ksp_e8: u128 = k_after * NUMBER_1E8 / (pool.lsp_supply as u128);
-            add_sma128(&mut pool.ksp_e8_sma, current_time, ksp_e8);
         };
 
         out_coin
@@ -648,8 +641,6 @@ module Aptoswap::pool {
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         assert!(pool.freeze == false, EPoolFreeze);
 
-        let k_before = compute_k(pool);
-
         let (x_reserve_amt, y_reserve_amt, _) = get_amounts(pool);
         assert!(x_reserve_amt > 0 && y_reserve_amt > 0, EReservesEmpty);
 
@@ -660,12 +651,12 @@ module Aptoswap::pool {
         let fee_coin = collect_fee(&mut in_coin, get_total_lp_fee(pool));
 
         // Get the output amount
-        let output_amount = compute_amount(
-            coin::value(&in_coin),
-            y_reserve_amt,
-            x_reserve_amt,
-        );
-
+        let output_amount = if (pool.pool_type == EPoolTypeV2) {
+            compute_amount(coin::value(&in_coin), y_reserve_amt, x_reserve_amt)
+        } else {
+            compute_amount_stable(coin::value(&in_coin), y_reserve_amt, x_reserve_amt, pool.stable_y_scale, pool.stable_x_scale, pool.stable_amp)
+        };
+        
         // 2. pool.y = pool.y + y_remain_amt + y_lp;
         coin::merge(&mut pool.y, in_coin);
         coin::merge(&mut pool.y, fee_coin);
@@ -675,9 +666,6 @@ module Aptoswap::pool {
         if (pool.fee_direction == EFeeDirectionX) {
             collect_admin_fee(&mut out_coin, get_total_admin_fee(pool), current_time);
         };
-
-        let k_after = compute_k(pool); 
-        assert!(k_after >= k_before, EComputationError);
 
         // Emit swap event
         event::emit_event(
@@ -694,7 +682,6 @@ module Aptoswap::pool {
         pool.total_trade_x = pool.total_trade_x + (output_amount as u128);
 
         if (current_time > 0) {
-
             pool.last_trade_time = current_time;
 
             if (pool.total_trade_24h_last_capture_time + TOTAL_TRADE_24H_INTERVAL_SEC < current_time) {
@@ -717,10 +704,6 @@ module Aptoswap::pool {
                     }
                 );
             };
-
-            // Add ksp_e8 sma average
-            let ksp_e8: u128 = k_after * NUMBER_1E8 / (pool.lsp_supply as u128);
-            add_sma128(&mut pool.ksp_e8_sma, current_time, ksp_e8);
         };
 
         out_coin
@@ -800,19 +783,13 @@ module Aptoswap::pool {
             // When it is not a intialized the deposit, we compute the amount of minted lsp by
             // not reducing the "token / lsp" value.
 
-            // We should make the value "token / lsp" larger than the previous value before adding liqudity
-            // Thus 
-            // (token + dtoken) / (lsp + dlsp) >= token / lsp
-            //  ==> (token + dtoken) * lsp >= token * (lsp + dlsp)
-            //  ==> dtoken * lsdp >= token * dlsp
-            //  ==> dlsp <= dtoken * lsdp / token
-            //  ==> dslp = floor[dtoken * lsdp / token] <= dtoken * lsdp / token
-            // We use the floor operation
-            let x_shared_minted: u128 = ((x_added as u128) * (lsp_supply as u128)) / (x_amt as u128);
-            let y_shared_minted: u128 = ((y_added as u128) * (lsp_supply as u128)) / (y_amt as u128);
-            let share_minted: u128 = if (x_shared_minted < y_shared_minted) { x_shared_minted } else { y_shared_minted };
-            let share_minted: u64 = (share_minted as u64);
-            share_minted
+            let shared_minted = if (pool.pool_type == EPoolTypeV2) {
+                compute_deposit(x_added, y_added, x_amt, y_amt, lsp_supply)
+            } else {
+                compute_deposit_stable(x_added, y_added, x_amt, y_amt, lsp_supply, pool.stable_x_scale, pool.stable_y_scale, pool.stable_amp)
+            };
+            shared_minted
+
         } else {
             // When it is a initialzed deposit, we compute using sqrt(x_added) * sqrt(y_added)
             let share_minted: u64 = sqrt(x_added) * sqrt(y_added);
@@ -837,20 +814,6 @@ module Aptoswap::pool {
         // 2. pool.y = pool.y + y_added;
         coin::merge(&mut pool.y, coin::withdraw(user, y_added));
         pool.lsp_supply = pool.lsp_supply + share_minted;
-
-        // Check:
-        // x_amt / lsp_supply <= x_amt_after / lsp_supply_after
-        //    ==> x_amt * lsp_supply_after <= x_amt_after * lsp_supply
-        let (x_amt_after, y_amt_after, lsp_supply_after) = get_amounts(pool); {
-            let x_amt_ = (x_amt as u128);
-            let y_amt_ = (y_amt as u128);
-            let lsp_supply_ = (lsp_supply as u128);
-            let x_amt_after_ = (x_amt_after as u128);
-            let y_amt_after_ = (y_amt_after as u128);
-            let lsp_supply_after_ = (lsp_supply_after as u128);
-            assert!(x_amt_ * lsp_supply_after_ <= x_amt_after_ * lsp_supply_, EComputationError);
-            assert!(y_amt_ * lsp_supply_after_ <= y_amt_after_ * lsp_supply_, EComputationError);
-        };
 
         validate_lsp(pool);
 
@@ -883,21 +846,12 @@ module Aptoswap::pool {
         // is freeze
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
 
-        // We should make the value "token / lsp" larger than the previous value before removing liqudity
-        // Thus 
-        // (token - dtoken) / (lsp - dlsp) >= token / lsp
-        //  ==> (token - dtoken) * lsp >= token * (lsp - dlsp)
-        //  ==> -dtoken * lsp >= -token * dlsp
-        //  ==> dtoken * lsp <= token * dlsp
-        //  ==> dtoken <= token * dlsp / lsp
-        //  ==> dtoken = floor[token * dlsp / lsp] <= token * dlsp / lsp
-        // We use the floor operation
         let (x_amt, y_amt, lsp_supply) = get_amounts(pool);
-        let x_removed = ((x_amt as u128) * (lsp_amount as u128)) / (lsp_supply as u128);
-        let y_removed = ((y_amt as u128) * (lsp_amount as u128)) / (lsp_supply as u128);
-
-        let x_removed = (x_removed as u64);
-        let y_removed = (y_removed as u64);
+        let (x_removed, y_removed) = if (pool.pool_type == EPoolTypeV2) {
+            compute_withdraw(x_amt, y_amt, lsp_supply, lsp_amount) 
+        } else {
+            compute_withdraw_stable(x_amt, y_amt, lsp_supply, lsp_amount, pool.stable_x_scale, pool.stable_y_scale, pool.stable_amp)
+        };
 
         let burn_cap = &borrow_global<LSPCapabilities<X, Y>>(pool_account_addr).burn;
 
@@ -1087,6 +1041,96 @@ module Aptoswap::pool {
         assert!(k_after >= k_before, EComputationError);
 
         (dy as u64)
+    }
+
+    // The compute amount for stable swap
+    public(friend) fun compute_amount_stable(dx: u64, x: u64, y: u64, scale_x: u64, scale_y: u64, amp: u64): u64 {
+        let scale_x = from_u64(scale_x);
+        let scale_y = from_u64(scale_y);
+
+        // Decimal align
+        let dx = mul(from_u64(dx), scale_x);
+        let x = mul(from_u64(x), scale_x);
+        let y = mul(from_u64(y), scale_y);
+
+        let amp = from_u64(amp);
+
+        let dy = ss_swap_to(dx, x, y, amp); 
+        // Revert to the original decimal, since we hope to small less, so use floor rounding instead of ceil rounding 
+        let dy = div(dy, scale_y);
+        let dy = as_u64(dy);
+
+        dy
+    }
+
+    public(friend) fun compute_deposit(x_added: u64, y_added: u64, x: u64, y: u64, supply: u64): u64 {
+        // We should make the value "token / lsp" larger than the previous value before adding liqudity
+        // Thus 
+        // (token + dtoken) / (lsp + dlsp) >= token / lsp
+        //  ==> (token + dtoken) * lsp >= token * (lsp + dlsp)
+        //  ==> dtoken * lsdp >= token * dlsp
+        //  ==> dlsp <= dtoken * lsdp / token
+        //  ==> dslp = floor[dtoken * lsdp / token] <= dtoken * lsdp / token
+        // We use the floor operation
+        let x_shared_minted: u128 = ((x_added as u128) * (supply as u128)) / (x as u128);
+        let y_shared_minted: u128 = ((y_added as u128) * (supply as u128)) / (y as u128);
+        let share_minted: u128 = if (x_shared_minted < y_shared_minted) { x_shared_minted } else { y_shared_minted };
+        let share_minted: u64 = (share_minted as u64);
+        share_minted
+    }
+
+    public(friend) fun compute_deposit_stable(x_added: u64, y_added: u64, x: u64, y: u64, supply: u64, scale_x: u64, scale_y: u64, amp: u64): u64 {
+        let scale_x = from_u64(scale_x);
+        let scale_y = from_u64(scale_y);
+
+        // Align decimal
+        let x = mul(from_u64(x), scale_x);
+        let y = mul(from_u64(y), scale_y);
+        let x_added = mul(from_u64(x_added), scale_x);
+        let y_added = mul(from_u64(y_added), scale_y);
+
+        let supply = from_u64(supply);
+        let amp = from_u64(amp);
+
+        let shared_minted = ss_compute_mint_amount_for_deposit(x_added, y_added, x, y, supply, amp);
+        let shared_minted = as_u64(shared_minted);
+        shared_minted
+    }
+
+    public(friend) fun compute_withdraw(x: u64, y: u64, supply: u64, amount: u64): (u64, u64) {
+        // We should make the value "token / lsp" larger than the previous value before removing liqudity
+        // Thus 
+        // (token - dtoken) / (lsp - dlsp) >= token / lsp
+        //  ==> (token - dtoken) * lsp >= token * (lsp - dlsp)
+        //  ==> -dtoken * lsp >= -token * dlsp
+        //  ==> dtoken * lsp <= token * dlsp
+        //  ==> dtoken <= token * dlsp / lsp
+        //  ==> dtoken = floor[token * dlsp / lsp] <= token * dlsp / lsp
+        // We use the floor operation
+        let x_removed = ((x as u128) * (amount as u128)) / (supply as u128);
+        let y_removed = ((y as u128) * (amount as u128)) / (supply as u128);
+        let x_removed = (x_removed as u64);
+        let y_removed = (y_removed as u64);
+        (x_removed, y_removed)
+    }
+
+    public(friend) fun compute_withdraw_stable(x: u64, y: u64, supply: u64, amount: u64, scale_x: u64, scale_y: u64, amp: u64): (u64, u64) {
+        let scale_x = from_u64(scale_x);
+        let scale_y = from_u64(scale_y);
+
+        let supply = from_u64(supply);
+        let amount = from_u64(amount);
+        let amp = from_u64(amp);
+
+        let x = mul(from_u64(x), scale_x);
+        let y = mul(from_u64(y), scale_y);
+
+        let (x_removed, y_removed) = ss_compute_withdraw(amount, supply, x, y, amp);
+        
+        // Use floor rounding for we want to remove less
+        let x_removed = as_u64(div(x_removed, scale_x));
+        let y_removed = as_u64(div(y_removed, scale_y));
+        (x_removed, y_removed)
     }
 
     public(friend) fun compute_k<T1,T2>(pool: &Pool<T1, T2>): u128 {
