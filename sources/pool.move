@@ -18,6 +18,9 @@ module Aptoswap::pool {
 
     #[test_only]
     friend Aptoswap::pool_test;
+    
+    #[test_only]
+    friend Aptoswap::stablepool_test;
 
     const NUMBER_1E8: u128 = 100000000;
     const NUMBER_1E9: u128 = 1000000000;
@@ -419,15 +422,21 @@ module Aptoswap::pool {
         let stable_x_scale: u64 = 0;
         let stable_y_scale: u64 = 0;
         if (pool_type == EPoolTypeStableSwap) {
-            
             let x_decimal = coin::decimals<X>();
             let y_decimal = coin::decimals<Y>();
 
             assert!(x_decimal <= STABLESWAP_COIN_MAX_DECIMAL && y_decimal <= STABLESWAP_COIN_MAX_DECIMAL, ECreatePoolStableCoinDecimalTooLarge);
             assert!(amp > 0, EInvalidParameter);
 
-            stable_x_scale = pow10(STABLESWAP_COIN_MAX_DECIMAL - x_decimal);
-            stable_y_scale = pow10(STABLESWAP_COIN_MAX_DECIMAL - x_decimal);
+            // To align the decimal into one
+            if (x_decimal < y_decimal) {
+                stable_x_scale = pow10(y_decimal - x_decimal);
+                stable_y_scale = 1;
+            } else {
+                // x_decimal > y_decimal
+                stable_x_scale = 1;
+                stable_y_scale = pow10(x_decimal - y_decimal);
+            };
         };
 
         // Create pool and move
@@ -1044,20 +1053,20 @@ module Aptoswap::pool {
     }
 
     // The compute amount for stable swap
-    public(friend) fun compute_amount_stable(dx: u64, x: u64, y: u64, scale_x: u64, scale_y: u64, amp: u64): u64 {
-        let scale_x = from_u64(scale_x);
-        let scale_y = from_u64(scale_y);
+    public(friend) fun compute_amount_stable(dx: u64, x: u64, y: u64, x_scale: u64, y_scale: u64, amp: u64): u64 {
+        let x_scale = from_u64(x_scale);
+        let y_scale = from_u64(y_scale);
 
         // Decimal align
-        let dx = mul(from_u64(dx), scale_x);
-        let x = mul(from_u64(x), scale_x);
-        let y = mul(from_u64(y), scale_y);
+        let dx = mul(from_u64(dx), x_scale);
+        let x = mul(from_u64(x), x_scale);
+        let y = mul(from_u64(y), y_scale);
 
         let amp = from_u64(amp);
 
         let dy = ss_swap_to(dx, x, y, amp); 
         // Revert to the original decimal, since we hope to small less, so use floor rounding instead of ceil rounding 
-        let dy = div(dy, scale_y);
+        let dy = div(dy, y_scale);
         let dy = as_u64(dy);
 
         dy
@@ -1079,15 +1088,15 @@ module Aptoswap::pool {
         share_minted
     }
 
-    public(friend) fun compute_deposit_stable(x_added: u64, y_added: u64, x: u64, y: u64, supply: u64, scale_x: u64, scale_y: u64, amp: u64): u64 {
-        let scale_x = from_u64(scale_x);
-        let scale_y = from_u64(scale_y);
+    public(friend) fun compute_deposit_stable(x_added: u64, y_added: u64, x: u64, y: u64, supply: u64, x_scale: u64, y_scale: u64, amp: u64): u64 {
+        let x_scale = from_u64(x_scale);
+        let y_scale = from_u64(y_scale);
 
         // Align decimal
-        let x = mul(from_u64(x), scale_x);
-        let y = mul(from_u64(y), scale_y);
-        let x_added = mul(from_u64(x_added), scale_x);
-        let y_added = mul(from_u64(y_added), scale_y);
+        let x = mul(from_u64(x), x_scale);
+        let y = mul(from_u64(y), y_scale);
+        let x_added = mul(from_u64(x_added), x_scale);
+        let y_added = mul(from_u64(y_added), y_scale);
 
         let supply = from_u64(supply);
         let amp = from_u64(amp);
@@ -1114,22 +1123,22 @@ module Aptoswap::pool {
         (x_removed, y_removed)
     }
 
-    public(friend) fun compute_withdraw_stable(x: u64, y: u64, supply: u64, amount: u64, scale_x: u64, scale_y: u64, amp: u64): (u64, u64) {
-        let scale_x = from_u64(scale_x);
-        let scale_y = from_u64(scale_y);
+    public(friend) fun compute_withdraw_stable(x: u64, y: u64, supply: u64, amount: u64, x_scale: u64, y_scale: u64, amp: u64): (u64, u64) {
+        let x_scale = from_u64(x_scale);
+        let y_scale = from_u64(y_scale);
 
         let supply = from_u64(supply);
         let amount = from_u64(amount);
         let amp = from_u64(amp);
 
-        let x = mul(from_u64(x), scale_x);
-        let y = mul(from_u64(y), scale_y);
+        let x = mul(from_u64(x), x_scale);
+        let y = mul(from_u64(y), y_scale);
 
         let (x_removed, y_removed) = ss_compute_withdraw(amount, supply, x, y, amp);
         
         // Use floor rounding for we want to remove less
-        let x_removed = as_u64(div(x_removed, scale_x));
-        let y_removed = as_u64(div(y_removed, scale_y));
+        let x_removed = as_u64(div(x_removed, x_scale));
+        let y_removed = as_u64(div(y_removed, y_scale));
         (x_removed, y_removed)
     }
 

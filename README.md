@@ -23,7 +23,7 @@ git submodule update --init --recursive
 - Run test cases (make sure your `aptos` command line is compatiable with the `aptos-core` in `submodules`):
 
 ```
-aptos move test
+aptos move test --instructions 100000000000
 ```
 
 - Compile the module:
