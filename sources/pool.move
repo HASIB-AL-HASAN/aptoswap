@@ -995,6 +995,17 @@ module Aptoswap::pool {
         pool.incentive_fee
     }
 
+    public(friend) fun get_pool_stable_x_scale<X, Y>(): u64 acquires Pool {
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
+        pool.stable_x_scale
+    }
+
+    public(friend) fun get_pool_stable_y_scale<X, Y>(): u64 acquires Pool {
+        let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
+        pool.stable_y_scale
+    }
+
+
 
     /// Get most used values in a handy way:
     /// - amount of SUI
