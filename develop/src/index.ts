@@ -372,6 +372,7 @@ const getAccount = () => {
 
 const getMoveCode = () => {
     const moduleFilenames = [
+        'u256.mv',
         'utils.mv',
         'pool.mv',
     ];
