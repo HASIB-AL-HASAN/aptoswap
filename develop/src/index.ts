@@ -372,6 +372,7 @@ const getAccount = () => {
 
 const getMoveCode = () => {
     const moduleFilenames = [
+        'u256.mv',
         'utils.mv',
         'pool.mv',
     ];
@@ -449,6 +450,7 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const BLUE_MOVE_PACKAGE_ADDR = "0xe4497a32bf4a9fd5601b27661aa0b933a923191bf403bd08669ab2468d43b379";
     const LAYER_ZERO_PACKAGE_ADDR = "0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa";
     const MOJO_PACKAGE_ADDR = "0x881ac202b1f1e6ad4efcff7a1d0579411533f2502417a19211cfc49751ddb5f4";
+    const APTOSEMOJI_MOVE_PACKAGE_ADDR = "825956fd45c29c34a2f83a0e96dff31916232deea78fc89275eda3d432f29c75";
     const TORTUGA_FINANCE_PACKAGE_ADDR = {
         devnet: "0x12d75d5bde2535789041cd380e832038da873a4ba86348ca891d374e1d0e15ab",
         testnet: "0x2a2ad97dfdbe4e34cdc9321c63592dda455f18bc25c9bb1f28260312159eae27",
@@ -538,9 +540,9 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const mojo = {
         fee: generalPoolFee,
         tokens: [
+            { coin: [ coins.mojo, coins.aptos ], direction: "Y" },
             { coin: [ coins.mojo, coins.usdc ], direction: "Y" },
             { coin: [ coins.mojo, coins.usdt ], direction: "Y" },
-            { coin: [ coins.mojo, coins.aptos ], direction: "Y" },
             { coin: [ coins.mojo, coins.zUsdc ], direction: "Y" },
             { coin: [ coins.mojo, coins.zUsdt ], direction: "Y" },
         ]
@@ -560,16 +562,30 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     }
 
     const celer = {
-        fee: {
-            adminFee: 0,
-            lpFee: 27,
-            incentiveFee: 3,
-            connectFee: 0,
-            withdrawFee: 10,
-        },
+        fee: generalPoolFee,
         tokens: [
             { coin: [coins.aptos, coins.ceUsdc],  direction: "Y" },
-            { coin: [coins.aptos, coins.ceUsdt],  direction: "Y" }
+            { coin: [coins.aptos, coins.ceUsdt],  direction: "Y" },
+            { coin: [coins.aptos, coins.ceBusd],  direction: "X" },
+            { coin: [coins.aptos, coins.ceDai],  direction: "X" },
+
+            { coin: [coins.ceWbtc, coins.ceUsdc], direction: "Y" },
+            { coin: [coins.ceWbtc, coins.ceUsdt], direction: "Y" },
+            { coin: [coins.ceWbtc, coins.ceDai],  direction: "Y" },
+            { coin: [coins.ceWbtc, coins.ceBusd], direction: "Y" },
+            { coin: [coins.ceWbtc, coins.aptos],  direction: "Y" },
+
+            { coin: [coins.ceWeth, coins.ceUsdc],  direction: "Y" },
+            { coin: [coins.ceWeth, coins.ceUsdt],  direction: "Y" },
+            { coin: [coins.ceWeth, coins.ceDai],  direction: "Y" },
+            { coin: [coins.ceWbtc, coins.ceBusd],  direction: "Y" },
+            { coin: [coins.ceWeth, coins.aptos],  direction: "Y" },
+
+            { coin: [coins.ceBnb, coins.ceUsdc],  direction: "Y" },
+            { coin: [coins.ceBnb, coins.ceUsdt],  direction: "Y" },
+            { coin: [coins.ceBnb, coins.ceDai],  direction: "Y" },
+            { coin: [coins.ceBnb, coins.ceBusd],  direction: "Y" },
+            { coin: [coins.ceBnb, coins.aptos],  direction: "Y" },
         ]
     }
 
@@ -599,6 +615,12 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
         ]
     }
     
+    const emoji = {
+        fee: generalPoolFee,
+        tokens: [
+            { coin: [`${APTOSEMOJI_MOVE_PACKAGE_ADDR}::emoji::Token2`, "0x1::aptos_coin::AptosCoin"],  direction: "Y" },
+        ]
+    }
 
     // Getting the pools
     const existsPoolTypes = (await client.getAccountResources(packageAddr)).filter(resource => resource.type.startsWith(`${packageAddr}::pool::Pool`)).map(x => x.type);
@@ -607,7 +629,7 @@ const actionCreatePool = async (args: string[], setups?: SetupType) => {
     const poolsConfigs = {
         devnet: [primary, aptoswap, hippoTest, tortuga, bluemove],
         testnet: [primary, aptoswap, hippoTest, tortuga, bluemove],
-        mainnet: [primary, celer, wormhole, layerZero]
+        mainnet: [primary, wormhole, layerZero, celer, mojo, emoji]
     }[net.type as string]!;
 
 
