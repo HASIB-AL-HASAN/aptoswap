@@ -10,9 +10,9 @@ module Aptoswap::pool {
     use aptos_framework::account;
     use aptos_framework::timestamp;
 
-    use Aptoswap::utils::{ WeeklySmaU128, create_sma128, pow10 };
+    use Aptoswap::utils::{ WeeklySmaU128, create_sma128, pow10, add_sma128 };
     use Aptoswap::u256::{ 
-        U256, add, sub, mul, div, from_u64, as_u64, is_zero, zero, one,
+        U256, add, sub, mul, div, from_u64, as_u64, as_u128, is_zero, zero, one,
         less_or_equals, greater_or_equals, abs_sub
     };
 
@@ -554,6 +554,9 @@ module Aptoswap::pool {
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         assert!(pool.freeze == false, EPoolFreeze);
 
+        // TODO: Remove validation to reduce gas
+        let k_before = compute_k(pool);
+
         let (x_reserve_amt, y_reserve_amt, _) = get_amounts(pool);
         assert!(x_reserve_amt > 0 && y_reserve_amt > 0, EReservesEmpty);
 
@@ -580,6 +583,10 @@ module Aptoswap::pool {
             collect_admin_fee(&mut out_coin, get_total_admin_fee(pool), current_time);
         };
 
+        // TODO: Remove validation to reduce gas
+        let k_after = compute_k(pool);  
+        assert!(k_after >= k_before, EComputationError);
+        
         // Emit swap event
         event::emit_event(
             &mut pool.swap_token_event,
@@ -618,6 +625,10 @@ module Aptoswap::pool {
                     }
                 );
             };
+
+            // Add ksp_e8 sma average
+            let ksp_e8: u128 = k_after * NUMBER_1E8 / (pool.lsp_supply as u128);
+            add_sma128(&mut pool.ksp_e8_sma, current_time, ksp_e8);
         };
 
         out_coin
@@ -650,6 +661,9 @@ module Aptoswap::pool {
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
         assert!(pool.freeze == false, EPoolFreeze);
 
+        // TODO: Remove validation to reduce gas
+        let k_before = compute_k(pool);
+
         let (x_reserve_amt, y_reserve_amt, _) = get_amounts(pool);
         assert!(x_reserve_amt > 0 && y_reserve_amt > 0, EReservesEmpty);
 
@@ -676,6 +690,10 @@ module Aptoswap::pool {
             collect_admin_fee(&mut out_coin, get_total_admin_fee(pool), current_time);
         };
 
+        // TODO: Remove validation to reduce gas
+        let k_after = compute_k(pool); 
+        assert!(k_after >= k_before, EComputationError);
+        
         // Emit swap event
         event::emit_event(
             &mut pool.swap_token_event,
@@ -713,6 +731,10 @@ module Aptoswap::pool {
                     }
                 );
             };
+            
+            // Add ksp_e8 sma average
+            let ksp_e8: u128 = k_after * NUMBER_1E8 / (pool.lsp_supply as u128);
+            add_sma128(&mut pool.ksp_e8_sma, current_time, ksp_e8);
         };
 
         out_coin
@@ -788,6 +810,10 @@ module Aptoswap::pool {
         assert!(pool.freeze == false, EPoolFreeze);
 
         let (x_amt, y_amt, lsp_supply) = get_amounts(pool);
+
+        // TODO: Remove validation to reduce gas
+        let k_before = compute_k(pool);
+
         let share_minted = if (lsp_supply > 0) {
             // When it is not a intialized the deposit, we compute the amount of minted lsp by
             // not reducing the "token / lsp" value.
@@ -824,6 +850,11 @@ module Aptoswap::pool {
         coin::merge(&mut pool.y, coin::withdraw(user, y_added));
         pool.lsp_supply = pool.lsp_supply + share_minted;
 
+        let k_after = compute_k(pool);
+
+        // TODO: Remove validation to reduce gas
+        // Post check for allowing k value increase
+        validate_lsp_value_increase(k_before, k_after, lsp_supply, pool.lsp_supply);
         validate_lsp(pool);
 
         event::emit_event(
@@ -856,6 +887,7 @@ module Aptoswap::pool {
         let pool = borrow_global_mut<Pool<X, Y>>(pool_account_addr);
 
         let (x_amt, y_amt, lsp_supply) = get_amounts(pool);
+
         let (x_removed, y_removed) = if (pool.pool_type == EPoolTypeV2) {
             compute_withdraw(x_amt, y_amt, lsp_supply, lsp_amount) 
         } else {
@@ -1144,7 +1176,25 @@ module Aptoswap::pool {
 
     public(friend) fun compute_k<T1,T2>(pool: &Pool<T1, T2>): u128 {
         let (x_amt, y_amt, _) = get_amounts(pool);
-        (x_amt as u128) * (y_amt as u128)
+
+        let k = if (pool.pool_type == EPoolTypeV2) {
+            (x_amt as u128) * (y_amt as u128)            
+        } else {
+            // k is actually d in stable swap
+            let x_scale = from_u64(pool.stable_x_scale);
+            let y_scale = from_u64(pool.stable_y_scale);
+            let x = mul(from_u64(x_amt), x_scale);
+            let y = mul(from_u64(y_amt), y_scale);
+            let amp = from_u64(pool.stable_amp);
+            let d = ss_compute_d(x, y, amp);
+            as_u128(d)
+        };
+
+        k
+    }
+
+    fun validate_lsp_value_increase(k_0: u128, k_1: u128, lsp_0: u64, lsp_1: u64) {
+        assert!((k_1 / (lsp_1 as u128)) >= (k_0 / (lsp_0 as u128)), EComputationError);
     }
 
     fun validate_lsp<X, Y>(pool: &Pool<X, Y>) {
