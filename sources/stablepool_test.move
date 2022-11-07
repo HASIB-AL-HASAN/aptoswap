@@ -325,8 +325,9 @@ module Aptoswap::stablepool_test {
     }
 
     #[test_only]
-    fun test_utils_create_stablepool(admin: &signer, init_x_amt: u64, init_y_amt: u64, x_decimal: u8, y_decimal: u8): address {
+    fun test_utils_create_stablepool(admin: &signer, guy: &signer, init_x_amt: u64, init_y_amt: u64, x_decimal: u8, y_decimal: u8): address {
         let admin_addr = signer::address_of(admin);
+        let guy_addr = signer::address_of(guy);
 
         initialize_impl(admin, 8);
 
@@ -357,18 +358,24 @@ module Aptoswap::stablepool_test {
         // Register & mint some coin
         assert!(coin::is_account_registered<USDC>(admin_addr), 3);
         assert!(coin::is_account_registered<USDT>(admin_addr), 4);
-        managed_coin::mint<USDC>(admin, admin_addr, init_x_amt);
-        managed_coin::mint<USDT>(admin, admin_addr, init_y_amt);
-        assert!(coin::balance<USDC>(admin_addr) == init_x_amt, 5);
-        assert!(coin::balance<USDT>(admin_addr) == init_y_amt, 5);
+
+        if (!coin::is_account_registered<USDC>(guy_addr)) {
+            managed_coin::register<USDC>(guy);
+        };
+        if (!coin::is_account_registered<USDT>(guy_addr)) {
+            managed_coin::register<USDT>(guy);
+        };
+        managed_coin::mint<USDC>(admin, guy_addr, init_x_amt);
+        managed_coin::mint<USDT>(admin, guy_addr, init_y_amt);
+        assert!(coin::balance<USDC>(guy_addr) == init_x_amt, 5);
+        assert!(coin::balance<USDT>(guy_addr) == init_y_amt, 5);
+
         if (init_x_amt > 0 && init_y_amt > 0) {
-            add_liquidity_impl<USDC, USDT>(admin, init_x_amt, init_y_amt);
-            assert!(coin::balance<LSP<USDC, USDT>>(admin_addr) > 0, 8);
+            add_liquidity_impl<USDC, USDT>(guy, init_x_amt, init_y_amt);
+            assert!(coin::balance<LSP<USDC, USDT>>(guy_addr) > 0, 8);
+            assert!(coin::balance<LSP<USDC, USDT>>(guy_addr) == get_pool_lsp_supply<USDC, USDT>(), 8);
         };
         validate_lsp_from_address<USDC, USDT>();
-        
-        // let _ = borrow_global<LSPCapabilities<USDC, USDT>>(pool_account_addr);
-        assert!(coin::balance<LSP<USDC, USDT>>(admin_addr) == get_pool_lsp_supply<USDC, USDT>(), 8);
 
         // Use == for testing
         assert!(get_pool_x<USDC, USDT>() == init_x_amt, 9);
@@ -383,10 +390,8 @@ module Aptoswap::stablepool_test {
         let guy_addr = signer::address_of(guy);
         account::create_account_for_test(admin_addr);
         account::create_account_for_test(guy_addr);
-        managed_coin::register<USDC>(guy);
-        managed_coin::register<USDT>(guy);
 
-        test_utils_create_stablepool(admin, 0, 0, s.x_decimal, s.y_decimal);
+        test_utils_create_stablepool(admin, guy, 0, 0, s.x_decimal, s.y_decimal);
         let i: u64 = 0;
         let data_legnth: u64 = vector::length(&s.data);
         while (i < data_legnth) 
@@ -427,6 +432,13 @@ module Aptoswap::stablepool_test {
 
             i = i + 1;
         };
+
+        // Last withdraw all the tokens and validate (for testing re-empty the pool)
+        remove_liquidity_impl_v2<USDC, USDT>(guy, get_pool_lsp_supply<USDC, USDT>(), 0);
+        let (x_final, y_final, lsp_final) = (get_pool_x<USDC, USDT>(), get_pool_y<USDC, USDT>(), get_pool_lsp_supply<USDC, USDT>());
+        assert!(x_final == 0, 0);
+        assert!(y_final == 0, 0);
+        assert!(lsp_final == 0, 0);
     }
 
     // Test two backtest data is generated from the "develop/scripts/amm_stable_price_data_raw/stable_backtest.wl" in suiswap. A mathematica 

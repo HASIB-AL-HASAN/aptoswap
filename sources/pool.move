@@ -1206,8 +1206,11 @@ module Aptoswap::pool {
 
     fun validate_lsp_value_increase(k_0: u128, k_1: u128, lsp_0: u64, lsp_1: u64) {
         // Use safe div
-        let kp_1 = if (k_1 != 0) {  k_1 / (lsp_1 as u128) } else { 0 };
-        let kp_0 = if (k_0 != 0) {  k_0 / (lsp_0 as u128) } else { 0 };
+        if ((k_1 == 0 && lsp_1 == 0) || (k_0 == 0 && lsp_0 == 0)) {
+            return
+        };
+        let kp_1 = k_1 / (lsp_1 as u128);
+        let kp_0 = k_0 / (lsp_0 as u128);
         assert!(kp_1 >= kp_0, EComputationError);
     }
 
@@ -1468,14 +1471,12 @@ module Aptoswap::pool {
     }
 
     public fun ss_validate_lsp_value_increase(d_0: U256, d_1: U256, lsp_0: U256, lsp_1: U256) {
+        if ((is_zero(&d_1) && is_zero(&lsp_1)) || (is_zero(&d_0) && is_zero(&lsp_0))) {
+            return
+        };
+
         // Validate the d per lsp not decreased
-        assert!(
-            greater_or_equals(
-                if (!is_zero(&d_1)) { &div(d_1, lsp_1) } else { &d_1 }, // When d_1 is zero, we can directly pass d_1 as zero without creating one
-                if (!is_zero(&d_0)) { &div(d_0, lsp_0) } else { &d_0 }  // When d_0 is zero, we can directly pass d_0 as zero without creating one
-            ),
-            EComputationError
-        );
+        assert!( greater_or_equals( &div(d_1, lsp_1), &div(d_0, lsp_0) ), EComputationError );
     }
     // ============================================= Stable Swap =============================================
 }
