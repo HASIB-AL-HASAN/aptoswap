@@ -987,63 +987,61 @@ module Aptoswap::pool {
         exists<SwapCap>(addr)
     }
 
-    public(friend) fun is_pool_freeze<X, Y>(): bool acquires Pool {
+    public fun is_pool_freeze<X, Y>(): bool acquires Pool {
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.freeze
     }
 
-    public(friend) fun get_pool_x<X, Y>(): u64  acquires Pool { 
+    public fun get_pool_x<X, Y>(): u64  acquires Pool { 
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         coin::value(&pool.x)
     }
 
-    public(friend) fun get_pool_y<X, Y>(): u64  acquires Pool { 
+    public fun get_pool_y<X, Y>(): u64  acquires Pool { 
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         coin::value(&pool.y)
     }
 
-    public(friend) fun get_pool_lsp_supply<X, Y>(): u64  acquires Pool { 
+    public fun get_pool_lsp_supply<X, Y>(): u64  acquires Pool { 
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.lsp_supply
     }
 
-    public(friend) fun get_pool_admin_fee<X, Y>(): u64 acquires Pool {
+    public fun get_pool_admin_fee<X, Y>(): u64 acquires Pool {
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.admin_fee
     }
 
-    public(friend) fun get_pool_connect_fee<X, Y>(): u64 acquires Pool {
+    public fun get_pool_connect_fee<X, Y>(): u64 acquires Pool {
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.connect_fee
     }
 
-    public(friend) fun get_pool_lp_fee<X, Y>(): u64 acquires Pool {
+    public fun get_pool_lp_fee<X, Y>(): u64 acquires Pool {
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.lp_fee
     }
 
-    public(friend) fun get_pool_incentive_fee<X, Y>(): u64 acquires Pool {
+    public fun get_pool_incentive_fee<X, Y>(): u64 acquires Pool {
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.incentive_fee
     }
 
-    public(friend) fun get_pool_stable_x_scale<X, Y>(): u64 acquires Pool {
+    public fun get_pool_stable_x_scale<X, Y>(): u64 acquires Pool {
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.stable_x_scale
     }
 
-    public(friend) fun get_pool_stable_y_scale<X, Y>(): u64 acquires Pool {
+    public fun get_pool_stable_y_scale<X, Y>(): u64 acquires Pool {
         let pool = borrow_global_mut<Pool<X, Y>>(@Aptoswap);
         pool.stable_y_scale
     }
-
-
 
     /// Get most used values in a handy way:
     /// - amount of SUI
     /// - amount of token
     /// - amount of current LSP
-    public(friend) fun get_amounts<X, Y>(pool: &Pool<X, Y>): (u64, u64, u64) {
+    public fun get_amounts<X, Y>(pool: &Pool<X, Y>): (u64, u64, u64) {
         (
             coin::value(&pool.x),
             coin::value(&pool.y), 
@@ -1051,20 +1049,20 @@ module Aptoswap::pool {
         )
     }
 
-    public(friend) fun get_admin_balance<X>(): u64 {
+    public fun get_admin_balance<X>(): u64 {
         coin::balance<X>(@Aptoswap)
     }
 
-    public(friend) fun get_total_lp_fee<X, Y>(pool: &Pool<X, Y>): u64 {
+    public fun get_total_lp_fee<X, Y>(pool: &Pool<X, Y>): u64 {
         pool.lp_fee + pool.incentive_fee
     }
 
-    public(friend) fun get_total_admin_fee<X, Y>(pool: &Pool<X, Y>): u64 {
+    public fun get_total_admin_fee<X, Y>(pool: &Pool<X, Y>): u64 {
         pool.admin_fee + pool.connect_fee
     }
 
     /// Get current lsp supply in the pool
-    public(friend) fun get_lsp_supply<X, Y>(pool: &Pool<X, Y>): u64 {
+    public fun get_lsp_supply<X, Y>(pool: &Pool<X, Y>): u64 {
         pool.lsp_supply
     }
 
@@ -1074,7 +1072,7 @@ module Aptoswap::pool {
     /// Due to the integter operation, we change the equality into
     /// inequadity operation, i.e:
     /// (x + dx) * (y - dy) >= x * y
-    public(friend) fun compute_amount(dx: u64, x: u64, y: u64): u64 {
+    public fun compute_amount(dx: u64, x: u64, y: u64): u64 {
         // (x + dx) * (y - dy) >= x * y
         //    ==> y - dy >= (x * y) / (x + dx)
         //    ==> dy <= y - (x * y) / (x + dx)
@@ -1096,7 +1094,7 @@ module Aptoswap::pool {
     }
 
     // The compute amount for stable swap
-    public(friend) fun compute_amount_stable(dx: u64, x: u64, y: u64, x_scale: u64, y_scale: u64, amp: u64): u64 {
+    public fun compute_amount_stable(dx: u64, x: u64, y: u64, x_scale: u64, y_scale: u64, amp: u64): u64 {
         let x_scale = from_u64(x_scale);
         let y_scale = from_u64(y_scale);
 
@@ -1115,7 +1113,7 @@ module Aptoswap::pool {
         dy
     }
 
-    public(friend) fun compute_deposit(x_added: u64, y_added: u64, x: u64, y: u64, supply: u64): u64 {
+    public fun compute_deposit(x_added: u64, y_added: u64, x: u64, y: u64, supply: u64): u64 {
         // We should make the value "token / lsp" larger than the previous value before adding liqudity
         // Thus 
         // (token + dtoken) / (lsp + dlsp) >= token / lsp
@@ -1131,7 +1129,7 @@ module Aptoswap::pool {
         share_minted
     }
 
-    public(friend) fun compute_deposit_stable(x_added: u64, y_added: u64, x: u64, y: u64, supply: u64, x_scale: u64, y_scale: u64, amp: u64): u64 {
+    public fun compute_deposit_stable(x_added: u64, y_added: u64, x: u64, y: u64, supply: u64, x_scale: u64, y_scale: u64, amp: u64): u64 {
         let x_scale = from_u64(x_scale);
         let y_scale = from_u64(y_scale);
 
@@ -1149,7 +1147,7 @@ module Aptoswap::pool {
         shared_minted
     }
 
-    public(friend) fun compute_withdraw(x: u64, y: u64, supply: u64, amount: u64): (u64, u64) {
+    public fun compute_withdraw(x: u64, y: u64, supply: u64, amount: u64): (u64, u64) {
         // We should make the value "token / lsp" larger than the previous value before removing liqudity
         // Thus 
         // (token - dtoken) / (lsp - dlsp) >= token / lsp
@@ -1166,7 +1164,7 @@ module Aptoswap::pool {
         (x_removed, y_removed)
     }
 
-    public(friend) fun compute_withdraw_stable(x: u64, y: u64, supply: u64, amount: u64, x_scale: u64, y_scale: u64, amp: u64): (u64, u64) {
+    public fun compute_withdraw_stable(x: u64, y: u64, supply: u64, amount: u64, x_scale: u64, y_scale: u64, amp: u64): (u64, u64) {
         let x_scale = from_u64(x_scale);
         let y_scale = from_u64(y_scale);
 
@@ -1185,7 +1183,7 @@ module Aptoswap::pool {
         (x_removed, y_removed)
     }
 
-    public(friend) fun compute_k<T1,T2>(pool: &Pool<T1, T2>): u128 {
+    public fun compute_k<T1,T2>(pool: &Pool<T1, T2>): u128 {
         let (x_amt, y_amt, _) = get_amounts(pool);
 
         let k = if (pool.pool_type == EPoolTypeV2) {
