@@ -305,7 +305,7 @@ const publishModule = async (client: AptosClient, accountFrom: AptosAccount, mod
         accountFrom, metadata, 
         moduleHexes.map(hex => new TxnBuilderTypes.Module(hex)),
         {
-            maxGasAmount: option?.maxGasAmount ?? BigInt(1900000),
+            maxGasAmount: option?.maxGasAmount ?? BigInt(1000000),
             gasUnitPrice: option?.gasUnitPrice ?? _MOVE_CALL_MIN_GAS_UNIT_PRICE,
             expireTimestamp: BigInt(Math.floor(Date.now() / 1000) + (option?.expirationSecond ?? 60.0))
         }
